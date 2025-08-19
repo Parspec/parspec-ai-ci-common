@@ -23,28 +23,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN mkdir -p /app/temp
 RUN chmod 777 /app/temp
 
-# Copy parspec-shared package
-COPY shared /app/shared/
+# Copy the entire service directory (build context)
+COPY . /app/
 
-# Install parspec-shared
-RUN pip install -e /app/shared
+# Install shared package if it exists
+RUN if [ -d "/app/shared" ]; then pip install -e /app/shared; fi
 
-# Copy requirements first to leverage Docker cache
-COPY services/column-detection-service/requirements.txt .
-
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy the application code
-COPY services/column-detection-service/src/ /app/src/
-# COPY .env /app/.env
+# Install Python dependencies if requirements.txt exists
+RUN if [ -f "requirements.txt" ]; then pip install --no-cache-dir -r requirements.txt; fi
 
 # Set Python path
-ENV PYTHONPATH=/app/src
+ENV PYTHONPATH=/app
 ENV TEMP_DIR=/app/temp
 
 # Expose port
 EXPOSE 8080
 
-# Command to run the application
-CMD ["uvicorn", "src.fastapi_column_detection:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "4"]
+# Command to run the application (will be overridden by build args or service-specific config)
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "4"]
