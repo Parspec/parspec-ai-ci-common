@@ -1,36 +1,27 @@
-# .github/workflows/build-and-push-ecr.yml
-
 name: Docker Build & Push to ECR
 
 on:
   workflow_call:
     inputs:
-      # The unique name of the service calling this workflow.
-      # Used to identify secrets and to name ECR repositories.
       service-name:
         required: true
         type: string
-        description: 'The unique name of the service (e.g., "user-auth-service").'
-
-      # A JSON array defining each Docker component to build within the service.
-      docker-build-configs:
+        description: 'The unique name of the service'
+      dockerfile-path:
         required: true
         type: string
-        description: 'JSON array of objects, each defining a Docker build config.'
-
-    # Note: No secrets are defined here, as this workflow uses its own repository secrets.
-    # The caller implicitly grants this access.
+        description: 'Relative path to the Dockerfile to use'
+      build-context:
+        required: true
+        type: string
+        description: 'Relative path to the build context directory'
+    # No secrets required - this workflow uses its own repository secrets
 
 jobs:
-  build-and-push-images:
+  build-and-push:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        config: ${{ fromJson(inputs.docker-build-configs) }}
     steps:
       - name: Configure AWS Credentials
-        # This action uses the secrets configured in *this* central repository.
-        # It's crucial that these secrets are set up for ci-cd-workflows.
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -38,49 +29,38 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Checkout Code
-        # This action checks out the code from the repository that *called* this workflow.
         uses: actions/checkout@v4
 
       - name: Login to Amazon ECR
-        # Logs the Docker client into ECR using the credentials configured above.
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Fetch Service Environment Variables from Secrets Manager
-        # This step retrieves the secrets from AWS Secrets Manager based on the service name.
         id: get-env-vars
         run: |
           SECRET_NAME="${{ inputs.service-name }}-env-vars"
-          echo "Fetching secret: $SECRET_NAME from AWS Secrets Manager."
-          
-          # Use AWS CLI to get the secret value.
           SECRET_JSON=$(aws secretsmanager get-secret-value --secret-id "$SECRET_NAME" --query SecretString --output text --region ${{ secrets.AWS_REGION }})
           
-          # Convert the JSON secret into a string of --build-arg flags for Docker.
-          BUILD_ARGS_STRING=$(echo "$SECRET_JSON" | jq -r 'to_entries[] | "--build-arg \(.key)=\"\(.value)\""' | tr '\n' ' ')
-          
-          echo "BUILD_ARGS_STRING=$BUILD_ARGS_STRING" >> $GITHUB_ENV
-          echo "::debug::Generated build arguments: $BUILD_ARGS_STRING"
+          if [ -z "$SECRET_JSON" ]; then
+            echo "::warning::No secret found. Continuing without environment variables."
+            echo "BUILD_ARGS_STRING=" >> $GITHUB_ENV
+          else
+            BUILD_ARGS_STRING=$(echo "$SECRET_JSON" | jq -r 'to_entries[] | "--build-arg \(.key)=\"\(.value)\""' | tr '\n' ' ')
+            echo "BUILD_ARGS_STRING=$BUILD_ARGS_STRING" >> $GITHUB_ENV
+          fi
         shell: bash
 
-      - name: Build and Push Docker Image for ${{ matrix.config.component_name }}
-        # This step uses a matrix to handle multiple Dockerfiles.
-        # The 'config' object is created dynamically from the 'docker-build-configs' input.
+      - name: Build, Tag, and Push Docker Image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          FULL_ECR_REPOSITORY: ${{ inputs.service-name }}-${{ matrix.config.component_name }}
+          FULL_ECR_REPOSITORY: ${{ inputs.service-name }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          echo "--- Building Image: ${{ matrix.config.component_name }} ---"
-
-          # Use the variables from the matrix and the fetched build args to build the image.
           docker build \
             -t $ECR_REGISTRY/$FULL_ECR_REPOSITORY:$IMAGE_TAG \
             -t $ECR_REGISTRY/$FULL_ECR_REPOSITORY:latest \
-            -f ${{ matrix.config.dockerfile-path }} \
+            -f ${{ inputs.dockerfile-path }} \
             ${{ env.BUILD_ARGS_STRING }} \
-            ${{ matrix.config.build-context }}
+            ${{ inputs.build-context }}
 
-          # Push both the SHA-tagged and 'latest' tagged images to ECR.
           docker push $ECR_REGISTRY/$FULL_ECR_REPOSITORY --all-tags
-        shell: bash
