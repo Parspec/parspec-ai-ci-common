@@ -38,7 +38,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: us-east-2
 
       - name: Login to Amazon ECR
         id: login-ecr
@@ -48,7 +48,7 @@ jobs:
         id: get-env-vars
         run: |
           SECRET_NAME="${{ inputs.service-name }}"
-          SECRET_JSON=$(aws secretsmanager get-secret-value --secret-id "$SECRET_NAME" --query SecretString --output text --region ${{ secrets.AWS_REGION }})
+          SECRET_JSON=$(aws secretsmanager get-secret-value --secret-id "$SECRET_NAME" --query SecretString --output text --region us-east-2)
           
           if [ -z "$SECRET_JSON" ]; then
             echo "::warning::No secret found. Continuing without environment variables."
