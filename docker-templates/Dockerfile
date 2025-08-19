@@ -37,7 +37,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the application code
 COPY services/column-detection-service/src/ /app/src/
-COPY .env /app/.env
+# COPY .env /app/.env
 
 # Set Python path
 ENV PYTHONPATH=/app/src
