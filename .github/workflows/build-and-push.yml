@@ -3,14 +3,11 @@ name: Docker Build & Push to ECR
 on:
   workflow_call:
     inputs:
+      # We still need the build context from the service repository to get the application code.
       service-name:
         required: true
         type: string
         description: 'The unique name of the service'
-      dockerfile-path:
-        required: true
-        type: string
-        description: 'Relative path to the Dockerfile to use'
       build-context:
         required: true
         type: string
@@ -21,15 +18,27 @@ jobs:
   build-and-push:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout Caller Code
+        # This step checks out the code from the repository that *called* this workflow.
+        # This is where your application code (the build context) lives.
+        uses: actions/checkout@v4
+        with:
+          path: caller-repo # Checkout into a subdirectory to avoid conflicts
+
+      - name: Checkout Central Dockerfiles
+        # This is the NEW step. It checks out the centralized repo into a specific path.
+        # This allows the workflow to access the standardized Dockerfile.
+        uses: actions/checkout@v4
+        with:
+          repository: Harshit-Parspec/ci-workflow
+          path: ci-cd-workflows-repo
+
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: Checkout Code
-        uses: actions/checkout@v4
 
       - name: Login to Amazon ECR
         id: login-ecr
@@ -38,7 +47,7 @@ jobs:
       - name: Fetch Service Environment Variables from Secrets Manager
         id: get-env-vars
         run: |
-          SECRET_NAME="${{ inputs.service-name }}-env-vars"
+          SECRET_NAME="${{ inputs.service-name }}"
           SECRET_JSON=$(aws secretsmanager get-secret-value --secret-id "$SECRET_NAME" --query SecretString --output text --region ${{ secrets.AWS_REGION }})
           
           if [ -z "$SECRET_JSON" ]; then
@@ -51,16 +60,19 @@ jobs:
         shell: bash
 
       - name: Build, Tag, and Push Docker Image
+        # Note: The Dockerfile path and build context now point to the correct locations.
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           FULL_ECR_REPOSITORY: ${{ inputs.service-name }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
+          # The -f flag points to the Dockerfile in the centralized repo.
+          # The final positional argument is the build context, which is the path to the caller's code.
           docker build \
             -t $ECR_REGISTRY/$FULL_ECR_REPOSITORY:$IMAGE_TAG \
             -t $ECR_REGISTRY/$FULL_ECR_REPOSITORY:latest \
-            -f ${{ inputs.dockerfile-path }} \
+            -f ./ci-cd-workflows-repo/docker-templates/Dockerfile \
             ${{ env.BUILD_ARGS_STRING }} \
-            ${{ inputs.build-context }}
+            ./caller-repo/${{ inputs.build-context }}
 
           docker push $ECR_REGISTRY/$FULL_ECR_REPOSITORY --all-tags
