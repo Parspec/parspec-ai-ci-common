@@ -3,31 +3,23 @@ name: Docker Build & Push to ECR
 on:
   workflow_call:
     inputs:
-      # We still need the build context from the service repository to get the application code.
       service-name:
         required: true
         type: string
-        description: 'The unique name of the service'
       build-context:
         required: true
         type: string
-        description: 'Relative path to the build context directory'
-    # No secrets required - this workflow uses its own repository secrets
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Caller Code
-        # This step checks out the code from the repository that *called* this workflow.
-        # This is where your application code (the build context) lives.
         uses: actions/checkout@v4
         with:
-          path: caller-repo # Checkout into a subdirectory to avoid conflicts
+          path: caller-repo
 
       - name: Checkout Central Dockerfiles
-        # This is the NEW step. It checks out the centralized repo into a specific path.
-        # This allows the workflow to access the standardized Dockerfile.
         uses: actions/checkout@v4
         with:
           repository: Harshit-Parspec/ci-workflow
@@ -48,31 +40,35 @@ jobs:
         id: get-env-vars
         run: |
           SECRET_NAME="${{ inputs.service-name }}"
-          SECRET_JSON=$(aws secretsmanager get-secret-value --secret-id "$SECRET_NAME" --query SecretString --output text --region us-east-2)
-          
+          SECRET_JSON=$(aws secretsmanager get-secret-value \
+            --secret-id "$SECRET_NAME" \
+            --query SecretString \
+            --output text \
+            --region us-east-2 || echo "")
+
           if [ -z "$SECRET_JSON" ]; then
-            echo "::warning::No secret found. Continuing without environment variables."
+            echo "::warning::No secret found for $SECRET_NAME"
             echo "BUILD_ARGS_STRING=" >> $GITHUB_ENV
           else
-            BUILD_ARGS_STRING=$(echo "$SECRET_JSON" | jq -r 'to_entries[] | "--build-arg \(.key)=\"\(.value)\""' | tr '\n' ' ')
+            BUILD_ARGS_STRING=$(echo "$SECRET_JSON" | jq -r 'to_entries[] | "--build-arg \(.key)=\(.value)"' | tr '\n' ' ')
             echo "BUILD_ARGS_STRING=$BUILD_ARGS_STRING" >> $GITHUB_ENV
           fi
-        shell: bash
 
       - name: Build, Tag, and Push Docker Image
-        # Note: The Dockerfile path and build context now point to the correct locations.
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           FULL_ECR_REPOSITORY: ${{ inputs.service-name }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          # The -f flag points to the Dockerfile in the centralized repo.
-          # The final positional argument is the build context, which is the path to the caller's code.
+          echo "🔨 Building image for $FULL_ECR_REPOSITORY ..."
+          
           docker build \
             -t $ECR_REGISTRY/$FULL_ECR_REPOSITORY:$IMAGE_TAG \
             -t $ECR_REGISTRY/$FULL_ECR_REPOSITORY:latest \
             -f ./ci-cd-workflows-repo/docker-templates/Dockerfile \
-            ${{ env.BUILD_ARGS_STRING }} \
+            $BUILD_ARGS_STRING \
             ./caller-repo/${{ inputs.build-context }}
 
-          docker push $ECR_REGISTRY/$FULL_ECR_REPOSITORY --all-tags
+          echo "🚀 Pushing image to ECR..."
+          docker push $ECR_REGISTRY/$FULL_ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$FULL_ECR_REPOSITORY:latest
