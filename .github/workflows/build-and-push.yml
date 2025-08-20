@@ -82,12 +82,10 @@ jobs:
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           FULL_ECR_REPOSITORY: ${{ inputs.service-name }}-${{ inputs.env }}
-          IMAGE_TAG: ${{ github.sha }}
         run: |
           echo "🔨 Building image for $FULL_ECR_REPOSITORY ..."
           
           docker build \
-            -t $ECR_REGISTRY/$FULL_ECR_REPOSITORY:$IMAGE_TAG \
             -t $ECR_REGISTRY/$FULL_ECR_REPOSITORY:latest \
             -f ./ci-cd-workflows-repo/docker-templates/Dockerfile \
             ${BUILD_ARGS_STRING} \
@@ -95,5 +93,4 @@ jobs:
             ./caller-repo/${{ inputs.build-context }}
 
           echo "🚀 Pushing image to ECR..."
-          docker push $ECR_REGISTRY/$FULL_ECR_REPOSITORY:$IMAGE_TAG
           docker push $ECR_REGISTRY/$FULL_ECR_REPOSITORY:latest
