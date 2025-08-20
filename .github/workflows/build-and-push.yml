@@ -73,7 +73,6 @@ jobs:
           fi
 
           # Generate APP_MODULE dynamically from service name
-          # Convert service-name to fastapi_<service_name_with_underscores>:app (remove _service suffix)
           SERVICE_NAME_UNDERSCORE=$(echo "${{ inputs.service-name }}" | sed 's/-/_/g' | sed 's/_service$//')
           APP_MODULE="src.fastapi_${SERVICE_NAME_UNDERSCORE}:app"
           echo "APP_MODULE=$APP_MODULE" >> $GITHUB_ENV
@@ -87,17 +86,19 @@ jobs:
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           FULL_ECR_REPOSITORY: ${{ inputs.service-name }}-${{ inputs.env }}
+          IMAGE_TAG: ${{ inputs.image-tag }}
         run: |
           echo "🔨 Building image for $FULL_ECR_REPOSITORY ..."
           echo "📝 APP_MODULE: $APP_MODULE"
           echo "📝 BUILD_ARGS_STRING: $BUILD_ARGS_STRING"
+          echo "🏷️ Image Tag: $IMAGE_TAG"
           
           docker build \
-            -t $ECR_REGISTRY/$FULL_ECR_REPOSITORY:latest \
+            -t $ECR_REGISTRY/$FULL_ECR_REPOSITORY:$IMAGE_TAG \
             -f ./ci-cd-workflows-repo/docker-templates/Dockerfile \
             ${BUILD_ARGS_STRING} \
             --build-arg APP_MODULE=$APP_MODULE \
             ./caller-repo/${{ inputs.build-context }}
 
           echo "🚀 Pushing image to ECR..."
-          docker push $ECR_REGISTRY/$FULL_ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$FULL_ECR_REPOSITORY:$IMAGE_TAG
