@@ -47,7 +47,7 @@ jobs:
       - name: Fetch Service Environment Variables from Secrets Manager
         id: get-env-vars
         run: |
-          SECRET_NAME="${{ inputs.service-name }}"
+          SECRET_NAME="${{ inputs.service-name }}-dev"
           SECRET_JSON=$(aws secretsmanager get-secret-value \
             --secret-id "$SECRET_NAME" \
             --query SecretString \
