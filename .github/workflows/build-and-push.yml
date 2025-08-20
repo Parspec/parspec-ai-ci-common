@@ -62,6 +62,17 @@ jobs:
             echo "BUILD_ARGS_STRING=$BUILD_ARGS_STRING" >> $GITHUB_ENV
           fi
 
+          # Generate APP_MODULE dynamically from service name
+          # Convert service-name to fastapi_<service_name_with_underscores>:app (remove _service suffix)
+          SERVICE_NAME_UNDERSCORE=$(echo "${{ inputs.service-name }}" | sed 's/-/_/g' | sed 's/_service$//')
+          APP_MODULE="src.fastapi_${SERVICE_NAME_UNDERSCORE}:app"
+          echo "APP_MODULE=$APP_MODULE" >> $GITHUB_ENV
+
+      - name: Copy shared package to service directory
+        run: |
+          cp -r ./caller-repo/shared ./caller-repo/${{ inputs.build-context }}/
+          echo "✅ Shared package copied to service directory"
+
       - name: Build, Tag, and Push Docker Image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -75,6 +86,7 @@ jobs:
             -t $ECR_REGISTRY/$FULL_ECR_REPOSITORY:latest \
             -f ./ci-cd-workflows-repo/docker-templates/Dockerfile \
             ${BUILD_ARGS_STRING} \
+            --build-arg APP_MODULE=$APP_MODULE \
             ./caller-repo/${{ inputs.build-context }}
 
           echo "🚀 Pushing image to ECR..."
