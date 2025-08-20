@@ -72,7 +72,6 @@ jobs:
           SERVICE_NAME_UNDERSCORE=$(echo "${{ inputs.service-name }}" | sed 's/-/_/g' | sed 's/_service$//')
           APP_MODULE="src.fastapi_${SERVICE_NAME_UNDERSCORE}:app"
           echo "APP_MODULE=$APP_MODULE" >> $GITHUB_ENV
-          echo "Generated APP_MODULE: $APP_MODULE" >> $GITHUB_ENV
 
       - name: Copy shared package to service directory
         run: |
