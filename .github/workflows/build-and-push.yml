@@ -14,6 +14,11 @@ on:
         type: string
         description: "Environment name (e.g., 'dev', 'staging', 'prod')"
         default: "dev"
+      image-tag:
+        required: false
+        type: string
+        description: "Optional Docker image tag (e.g., Git tag or SHA)"
+        default: "latest"
     secrets:
       AWS_ACCESS_KEY_ID:
         required: true
