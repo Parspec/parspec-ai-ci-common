@@ -27,7 +27,7 @@ jobs:
       - name: Checkout Central Dockerfiles
         uses: actions/checkout@v4
         with:
-          repository: Harshit-Parspec/ci-workflow
+          repository: Parspec/parspec-ai-ci-common
           path: ci-cd-workflows-repo
 
       - name: Configure AWS Credentials
