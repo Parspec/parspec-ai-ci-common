@@ -46,11 +46,11 @@ RUN pip install -e /app/shared
 RUN if [ -f "requirements.txt" ]; then pip install --no-cache-dir -r requirements.txt; fi
 
 # Set Python path
-ENV PYTHONPATH=/app/src
+ENV PYTHONPATH=/app
 ENV TEMP_DIR=/app/temp
 
 # Expose port
 EXPOSE 8080
 
 # Command to run the application (configurable via APP_MODULE build arg)
-CMD ["sh", "-c", "uvicorn $APP_MODULE --host 0.0.0.0 --port 8080 --workers 4"]
+CMD ["sh", "-c", "cd /app && uvicorn $APP_MODULE --host 0.0.0.0 --port 8080 --workers 4"]
