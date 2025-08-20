@@ -1,10 +1,20 @@
 # Use an official Python runtime as a parent image
 FROM python:3.10-slim
 
+# Define build arguments for environment variables
+ARG OPENAI_API_KEY
+ARG EXTRACT_TABLE_API_KEY
+ARG AWS_REGION
+ARG P0_CLASSIFICATION_ENDPOINT
+
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    OPENAI_API_KEY=$OPENAI_API_KEY \
+    EXTRACT_TABLE_API_KEY=$EXTRACT_TABLE_API_KEY \
+    AWS_REGION=$AWS_REGION \
+    P0_CLASSIFICATION_ENDPOINT=$P0_CLASSIFICATION_ENDPOINT
 
 # Set working directory
 WORKDIR /app
