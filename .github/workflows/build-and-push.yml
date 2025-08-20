@@ -9,6 +9,11 @@ on:
       build-context:
         required: true
         type: string
+      env:
+        required: false
+        type: string
+        description: "Environment name (e.g., 'dev', 'staging', 'prod')"
+        default: "dev"
     secrets:
       AWS_ACCESS_KEY_ID:
         required: true
@@ -47,7 +52,7 @@ jobs:
       - name: Fetch Service Environment Variables from Secrets Manager
         id: get-env-vars
         run: |
-          SECRET_NAME="${{ inputs.service-name }}-dev"
+          SECRET_NAME="${{ inputs.service-name }}-${{ inputs.env }}"
           SECRET_JSON=$(aws secretsmanager get-secret-value \
             --secret-id "$SECRET_NAME" \
             --query SecretString \
@@ -76,7 +81,7 @@ jobs:
       - name: Build, Tag, and Push Docker Image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          FULL_ECR_REPOSITORY: ${{ inputs.service-name }}
+          FULL_ECR_REPOSITORY: ${{ inputs.service-name }}-${{ inputs.env }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
           echo "🔨 Building image for $FULL_ECR_REPOSITORY ..."
