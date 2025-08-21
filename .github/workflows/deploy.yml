@@ -23,6 +23,8 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
         with:
+          repository: Parspec/parspec-ai-ci-common
+          path: ci-cd-workflows-repo
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Update image tag in deployment file
