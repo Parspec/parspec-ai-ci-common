@@ -1,13 +1,13 @@
 FROM python:3.10-slim
 
-# Build args (if you use them)
+# (Optional) build-time args – consider injecting secrets at runtime instead
 ARG OPENAI_API_KEY
 ARG EXTRACT_TABLE_API_KEY
 ARG AWS_REGION
 ARG P0_CLASSIFICATION_ENDPOINT
 ARG MODEL_S3_PATH
 
-# Runtime env (CHANGED: PYTHONPATH to /app/src, APP_MODULE without 'src.')
+# Runtime env
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -16,7 +16,7 @@ ENV PYTHONUNBUFFERED=1 \
     AWS_REGION=$AWS_REGION \
     P0_CLASSIFICATION_ENDPOINT=$P0_CLASSIFICATION_ENDPOINT \
     MODEL_S3_PATH=$MODEL_S3_PATH \
-    PYTHONPATH=/app/src \
+    PYTHONPATH=/app/src:/app/shared \
     TEMP_DIR=/app/temp \
     APP_MODULE="fastapi_table_parsing:app"
 
@@ -31,13 +31,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr \
   && rm -rf /var/lib/apt/lists/*
 
-# Temp dir
-RUN mkdir -p /app/temp && chmod 777 /app/temp
-
-# App code
+# App code (CI build context = services/table-parsing-service)
 COPY . /app/
 
-# (Optional but helpful) Fail fast if imports aren’t resolvable
+# If shared is a real package (pyproject.toml/setup.py), install it; otherwise it’s importable via PYTHONPATH
+RUN pip install -e /app/shared || true
+
+# Python deps – ensure requirements.txt includes: fastapi, uvicorn[standard], pydantic
+RUN if [ -f "requirements.txt" ]; then pip install --no-cache-dir -r requirements.txt; else echo "No requirements.txt found"; fi
+
+# (Optional) Smoke test AFTER deps are installed
+# Comment out this block if it still triggers import-time side effects during build
 RUN python - <<'PY'
 import importlib
 importlib.import_module("api.routes")
@@ -45,13 +49,7 @@ importlib.import_module("fastapi_table_parsing")
 print("✅ Import smoke test passed")
 PY
 
-# Shared package (must have pyproject.toml or setup.py)
-RUN pip install -e /app/shared
-
-# Python deps
-RUN if [ -f "requirements.txt" ]; then pip install --no-cache-dir -r requirements.txt; fi
-
 EXPOSE 8080
 
-# For initial debugging, 1 worker shows errors clearly; change to 4 later
+# Start app; use 1 worker while stabilizing; bump when ready
 CMD ["sh", "-c", "uvicorn $APP_MODULE --host 0.0.0.0 --port 8080 --workers 1"]
