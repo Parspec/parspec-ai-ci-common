@@ -1,13 +1,13 @@
 FROM python:3.10-slim
 
-# Build args (still used for injecting values at build time if needed)
+# Build args (if you use them)
 ARG OPENAI_API_KEY
 ARG EXTRACT_TABLE_API_KEY
 ARG AWS_REGION
 ARG P0_CLASSIFICATION_ENDPOINT
 ARG MODEL_S3_PATH
 
-# Runtime env
+# Runtime env (CHANGED: PYTHONPATH to /app/src, APP_MODULE without 'src.')
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -16,9 +16,9 @@ ENV PYTHONUNBUFFERED=1 \
     AWS_REGION=$AWS_REGION \
     P0_CLASSIFICATION_ENDPOINT=$P0_CLASSIFICATION_ENDPOINT \
     MODEL_S3_PATH=$MODEL_S3_PATH \
-    PYTHONPATH=/app \
+    PYTHONPATH=/app/src \
     TEMP_DIR=/app/temp \
-    APP_MODULE="src.fastapi_table_parsing:app"
+    APP_MODULE="fastapi_table_parsing:app"
 
 WORKDIR /app
 
@@ -37,6 +37,14 @@ RUN mkdir -p /app/temp && chmod 777 /app/temp
 # App code
 COPY . /app/
 
+# (Optional but helpful) Fail fast if imports aren’t resolvable
+RUN python - <<'PY'
+import importlib
+importlib.import_module("api.routes")
+importlib.import_module("fastapi_table_parsing")
+print("✅ Import smoke test passed")
+PY
+
 # Shared package (must have pyproject.toml or setup.py)
 RUN pip install -e /app/shared
 
@@ -45,4 +53,5 @@ RUN if [ -f "requirements.txt" ]; then pip install --no-cache-dir -r requirement
 
 EXPOSE 8080
 
-CMD ["sh", "-c", "uvicorn $APP_MODULE --host 0.0.0.0 --port 8080 --workers 4"]
+# For initial debugging, 1 worker shows errors clearly; change to 4 later
+CMD ["sh", "-c", "uvicorn $APP_MODULE --host 0.0.0.0 --port 8080 --workers 1"]
