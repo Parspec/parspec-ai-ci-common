@@ -24,12 +24,16 @@ on:
         required: true
       AWS_SECRET_ACCESS_KEY:
         required: true
+    outputs:                                  # 👈 expose to caller here
+      image-tag:
+        description: "Effective image tag used for the image"
+        value: ${{ jobs.build-and-push.outputs.image-tag }}   # map from job
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
     outputs:
-      image-tag: ${{ inputs.image-tag }} 
+      image-tag: ${{ steps.export_tag.outputs.image_tag }}    # 👈 job output
     steps:
       - name: Checkout Caller Code
         uses: actions/checkout@v4
@@ -84,17 +88,21 @@ jobs:
           cp -r ./caller-repo/shared ./caller-repo/${{ inputs.build-context }}/
           echo "✅ Shared package copied to service directory"
 
+      - name: Export image tag used                      # 👈 set a step output
+        id: export_tag
+        run: echo "image_tag=${{ inputs.image-tag }}" >> "$GITHUB_OUTPUT"
+
       - name: Build, Tag, and Push Docker Image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           FULL_ECR_REPOSITORY: ${{ inputs.service-name }}-${{ inputs.env }}
-          IMAGE_TAG: ${{ inputs.image-tag }}
+          IMAGE_TAG: ${{ steps.export_tag.outputs.image_tag }}
         run: |
           echo "🔨 Building image for $FULL_ECR_REPOSITORY ..."
           echo "📝 APP_MODULE: $APP_MODULE"
           echo "📝 BUILD_ARGS_STRING: $BUILD_ARGS_STRING"
           echo "🏷️ Image Tag: $IMAGE_TAG"
-          
+
           docker build \
             -t $ECR_REGISTRY/$FULL_ECR_REPOSITORY:$IMAGE_TAG \
             -f ./ci-cd-workflows-repo/docker-templates/Dockerfile \
