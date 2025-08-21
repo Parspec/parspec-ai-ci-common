@@ -5,38 +5,57 @@ on:
     types: [deploy-service]
 
 permissions:
-  contents: write   # allow commit + push
+  contents: write
 
 jobs:
   update-deployment:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Parse payload
         run: |
           echo "SERVICE=${{ github.event.client_payload.service }}" >> $GITHUB_ENV
-          echo "ENV=${{ github.event.client_payload.env }}" >> $GITHUB_ENV
-          echo "IMAGE_TAG=${{ github.event.client_payload.image_tag }}" >> $GITHUB_ENV
+          echo "ENV=${{ github.event.client_payload.env }}"         >> $GITHUB_ENV
+          echo "TAG=${{ github.event.client_payload.image_tag }}"   >> $GITHUB_ENV
 
-      - name: Update deployment file
+      - name: Update deployment file and push
         run: |
-          DEPLOY_FILE="deployment/${SERVICE}-${ENV}.yml"
-          echo "🔎 Updating $DEPLOY_FILE to $IMAGE_TAG"
+          set -euo pipefail
 
-          # Install yq
-          sudo wget -qO /usr/local/bin/yq "https://github.com/mikefarah/yq/releases/download/v4.44.1/yq_linux_amd64"
+          DEPLOY_FILE="deployment/${SERVICE}-${ENV}.yml"
+          echo "🔎 Updating ${DEPLOY_FILE} to tag '${TAG}'"
+
+          [ -f "$DEPLOY_FILE" ] || { echo "❌ Missing $DEPLOY_FILE"; exit 1; }
+
+          # yq
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.44.1/yq_linux_amd64
           sudo chmod +x /usr/local/bin/yq
 
-          CUR_IMAGE=$(yq 'select(.kind == "Deployment") | .spec.template.spec.containers[0].image' "$DEPLOY_FILE")
-          BASE="${CUR_IMAGE%:*}"
-          NEW_IMAGE="${BASE}:${IMAGE_TAG}"
+          # Read current image from Deployment only
+          CUR_IMAGE=$(yq 'select(.kind=="Deployment") | .spec.template.spec.containers[0].image' "$DEPLOY_FILE")
+          [ -n "$CUR_IMAGE" ] && [ "$CUR_IMAGE" != "null" ] || { echo "❌ Could not read current image"; exit 1; }
 
-          yq -i '(. | select(.kind == "Deployment")).spec.template.spec.containers[0].image = env(NEW_IMAGE)' "$DEPLOY_FILE"
+          # Preserve repo, swap only tag
+          if [[ "$CUR_IMAGE" == *:* ]]; then BASE="${CUR_IMAGE%:*}"; else BASE="$CUR_IMAGE"; fi
+          export NEW_IMAGE="${BASE}:${TAG}"
 
-          git config user.name "github-actions[bot]"
+          echo "OLD: $CUR_IMAGE"
+          echo "NEW: $NEW_IMAGE"
+
+          if [ "$CUR_IMAGE" = "$NEW_IMAGE" ]; then
+            echo "ℹ️ Already at desired image. Nothing to change."
+            exit 0
+          fi
+
+          # Update ONLY the Deployment doc
+          yq -i 'select(.kind=="Deployment").spec.template.spec.containers[0].image = strenv(NEW_IMAGE)' "$DEPLOY_FILE"
+
+          echo "🔁 Diff:"
+          git --no-pager diff -- "$DEPLOY_FILE" || true
+
+          git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add "$DEPLOY_FILE"
-          git commit -m "chore: deploy ${SERVICE} to ${ENV} @ ${IMAGE_TAG} [skip ci]" || echo "No changes to commit"
-          git push origin main
+          git commit -m "chore: deploy ${SERVICE} to ${ENV} @ ${TAG} [skip ci]" || { echo "ℹ️ No changes to commit"; exit 0; }
+          git push
