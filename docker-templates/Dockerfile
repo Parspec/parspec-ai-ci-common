@@ -1,14 +1,13 @@
-# Use an official Python runtime as a parent image
 FROM python:3.10-slim
 
-# Define build arguments for environment variables
+# Build args (still used for injecting values at build time if needed)
 ARG OPENAI_API_KEY
 ARG EXTRACT_TABLE_API_KEY
 ARG AWS_REGION
 ARG P0_CLASSIFICATION_ENDPOINT
 ARG MODEL_S3_PATH
 
-# Set environment variables
+# Runtime env
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -19,34 +18,31 @@ ENV PYTHONUNBUFFERED=1 \
     MODEL_S3_PATH=$MODEL_S3_PATH \
     PYTHONPATH=/app \
     TEMP_DIR=/app/temp \
-    APP_MODULE="src.fastapi_table_parsing:app"   # 👈 Hardcoded here
+    APP_MODULE="src.fastapi_table_parsing:app"
 
-# Set working directory
 WORKDIR /app
 
-# Install system dependencies
+# System deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
     libglib2.0-0 \
     poppler-utils \
     tesseract-ocr \
-    && rm -rf /var/lib/apt/lists/*
+  && rm -rf /var/lib/apt/lists/*
 
-# Create and set permissions for temp directories
+# Temp dir
 RUN mkdir -p /app/temp && chmod 777 /app/temp
 
-# Copy the entire service directory (build context)
+# App code
 COPY . /app/
 
-# Install shared package
+# Shared package (must have pyproject.toml or setup.py)
 RUN pip install -e /app/shared
 
-# Install Python dependencies if requirements.txt exists
+# Python deps
 RUN if [ -f "requirements.txt" ]; then pip install --no-cache-dir -r requirements.txt; fi
 
-# Expose port
 EXPOSE 8080
 
-# Run application with Uvicorn
 CMD ["sh", "-c", "uvicorn $APP_MODULE --host 0.0.0.0 --port 8080 --workers 4"]
