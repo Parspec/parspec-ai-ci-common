@@ -26,13 +26,13 @@ jobs:
           repository: Parspec/parspec-ai-ci-common
           path: ci-cd-workflows-repo
           token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Update image tag in deployment file
+      - name: Update image tag in deployment file (safe)
+        id: update
         run: |
-            set -e
+            set -euo pipefail
             cd ci-cd-workflows-repo
-  
-            # Find the deployments dir
+        
+            # Locate deployments dir
             if [ -d "deployment" ]; then
               DEPLOY_DIR="deployment"
             elif [ -d ".deployment" ]; then
@@ -42,64 +42,74 @@ jobs:
               ls -la
               exit 1
             fi
-  
-            DEPLOY_FILE="$DEPLOY_DIR/${{ inputs.service-name }}-${{ inputs.env }}.yml"
+        
+            DEPLOY_FILE="$DEPLOY_DIR/table-parsing-service-dev.yml"  # or use inputs to build this
             [ -f "$DEPLOY_FILE" ] || { echo "❌ Missing $DEPLOY_FILE"; exit 1; }
-            [ -n "${{ inputs.image-tag }}" ] || { echo "❌ image-tag is empty"; exit 1; }
-  
-            echo "🔎 Updating: $DEPLOY_FILE to tag '${{ inputs.image-tag }}'"
-  
-            # Install yq (safer than sed for YAML)
-            sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.44.1/yq_linux_amd64
+        
+            NEW_TAG="test_branch"  # or: NEW_TAG='${{ inputs.image-tag }}'
+            [ -n "$NEW_TAG" ] || { echo "❌ image-tag is empty"; exit 1; }
+        
+            # Install yq
+            sudo wget -qO /usr/local/bin/yq "https://github.com/mikefarah/yq/releases/download/v4.44.1/yq_linux_amd64"
             sudo chmod +x /usr/local/bin/yq
-  
-            # Read current image (adjust container index or name if needed)
-            CUR_IMAGE=$(yq '.spec.template.spec.containers[0].image' "$DEPLOY_FILE")
-            [ -n "$CUR_IMAGE" ] || { echo "❌ Could not read current image from YAML"; exit 1; }
-  
-            # Split into repo and tag. If the current image has no ':', assume 'latest'.
+        
+            # Read current image from the Deployment doc only
+            CUR_IMAGE=$(yq 'select(.kind == "Deployment") | .spec.template.spec.containers[0].image' "$DEPLOY_FILE")
+            if [ -z "$CUR_IMAGE" ] || [ "$CUR_IMAGE" = "null" ]; then
+              echo "❌ Could not read current image from the Deployment doc"
+              exit 1
+            fi
+        
+            # Build new image (preserve repo, swap only tag)
             if [[ "$CUR_IMAGE" == *:* ]]; then
               BASE="${CUR_IMAGE%:*}"
             else
               BASE="$CUR_IMAGE"
             fi
-  
-            NEW_IMAGE="${BASE}:${{ inputs.image-tag }}"
-            echo "🖊️  $CUR_IMAGE  ->  $NEW_IMAGE"
-  
-            # If already up to date, do nothing (let next step exit successfully)
+            NEW_IMAGE="${BASE}:${NEW_TAG}"
+        
+            echo "🔎 File: $DEPLOY_FILE"
+            echo "OLD: $CUR_IMAGE"
+            echo "NEW: $NEW_IMAGE"
+        
             if [ "$CUR_IMAGE" = "$NEW_IMAGE" ]; then
-              echo "ℹ️ Image already at desired tag, no change needed."
               echo "NO_CHANGE=1" >> $GITHUB_ENV
+              # Still export vars for next step
+              echo "DEPLOY_DIR=$DEPLOY_DIR"   >> $GITHUB_ENV
+              echo "DEPLOY_FILE=$DEPLOY_FILE" >> $GITHUB_ENV
               exit 0
             fi
-  
-            # Write new image back
-            yq -i '.spec.template.spec.containers[0].image = "'"$NEW_IMAGE"'"' "$DEPLOY_FILE"
-  
+        
+            # Update ONLY the Deployment document
+            yq -i '(. | select(.kind == "Deployment")).spec.template.spec.containers[0].image = env(NEW_IMAGE)' "$DEPLOY_FILE"
+        
             echo "🔁 Diff:"
             git --no-pager diff -- "$DEPLOY_FILE" || true
-  
-
-      - name: Commit and push changes
+        
+            # Persist for next step
+            echo "DEPLOY_DIR=$DEPLOY_DIR"   >> $GITHUB_ENV
+            echo "DEPLOY_FILE=$DEPLOY_FILE" >> $GITHUB_ENV
+        
+      - name: Commit and push changes (only if modified)
         run: |
-              cd ci-cd-workflows-repo
-    
-              # If previous step set NO_CHANGE, skip committing
-              if [ "${NO_CHANGE:-}" = "1" ]; then
-                echo "✅ Nothing to commit (already up to date)."
-                exit 0
-              fi
-    
-              # Only commit if there are actual changes
-              if git diff --quiet --exit-code -- $DEPLOY_DIR/${{ inputs.service-name }}-${{ inputs.env }}.yml; then
-                echo "ℹ️ No changes detected."
-                exit 0
-              fi
-    
-              git config user.name "github-actions[bot]"
-              git config user.email "github-actions[bot]@users.noreply.github.com"
-              git add $DEPLOY_DIR/${{ inputs.service-name }}-${{ inputs.env }}.yml
-              git commit -m "chore: deploy ${{ inputs.service-name }} to ${{ inputs.env }} @ ${{ inputs.image-tag }} [skip ci]"
-              git push origin main
-    
+            set -euo pipefail
+            cd ci-cd-workflows-repo
+        
+            # If previous step said no change, skip commit
+            if [ "${NO_CHANGE:-}" = "1" ]; then
+              echo "✅ Nothing to commit (already up to date)."
+              exit 0
+            fi
+        
+            # Only commit if the file actually changed
+            if git diff --quiet --exit-code -- "$DEPLOY_FILE"; then
+              echo "ℹ️ No changes detected."
+              exit 0
+            fi
+        
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add "$DEPLOY_FILE"
+            git commit -m "chore: deploy table-parsing-service to dev @ ${NEW_TAG:-${{ inputs.image-tag }} } [skip ci]"
+            git push origin main
+        
