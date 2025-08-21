@@ -1,0 +1,42 @@
+name: Deploy via Dispatch
+
+on:
+  repository_dispatch:
+    types: [deploy-service]
+
+permissions:
+  contents: write   # allow commit + push
+
+jobs:
+  update-deployment:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Parse payload
+        run: |
+          echo "SERVICE=${{ github.event.client_payload.service }}" >> $GITHUB_ENV
+          echo "ENV=${{ github.event.client_payload.env }}" >> $GITHUB_ENV
+          echo "IMAGE_TAG=${{ github.event.client_payload.image_tag }}" >> $GITHUB_ENV
+
+      - name: Update deployment file
+        run: |
+          DEPLOY_FILE="deployment/${SERVICE}-${ENV}.yml"
+          echo "🔎 Updating $DEPLOY_FILE to $IMAGE_TAG"
+
+          # Install yq
+          sudo wget -qO /usr/local/bin/yq "https://github.com/mikefarah/yq/releases/download/v4.44.1/yq_linux_amd64"
+          sudo chmod +x /usr/local/bin/yq
+
+          CUR_IMAGE=$(yq 'select(.kind == "Deployment") | .spec.template.spec.containers[0].image' "$DEPLOY_FILE")
+          BASE="${CUR_IMAGE%:*}"
+          NEW_IMAGE="${BASE}:${IMAGE_TAG}"
+
+          yq -i '(. | select(.kind == "Deployment")).spec.template.spec.containers[0].image = env(NEW_IMAGE)' "$DEPLOY_FILE"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "$DEPLOY_FILE"
+          git commit -m "chore: deploy ${SERVICE} to ${ENV} @ ${IMAGE_TAG} [skip ci]" || echo "No changes to commit"
+          git push origin main
