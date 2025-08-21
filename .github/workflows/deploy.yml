@@ -1,0 +1,42 @@
+name: Deploy Service
+
+on:
+  workflow_call:
+    inputs:
+      service-name:
+        description: "Name of the service to deploy"
+        required: true
+        type: string
+      env:
+        description: "Environment (dev/staging/prod)"
+        required: true
+        type: string
+      image-tag:
+        description: "Docker image tag to deploy"
+        required: true
+        type: string
+
+jobs:
+  update-deployment:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update image tag in deployment file
+        run: |
+          DEPLOY_FILE="deployment/${{ inputs.service-name }}-${{ inputs.env }}.yml"
+          echo "Updating deployment file: $DEPLOY_FILE"
+          
+          # Replace image tag in YAML (assuming format: image: repo/service-name-service-env:tag)
+          sed -i "s|\(image:.*${{ inputs.service-name }}-service-${{ inputs.env }}:\).*|\1${{ inputs.image-tag }}|" "$DEPLOY_FILE"
+
+      - name: Commit and push changes
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add deployment/${{ inputs.service-name }}-${{ inputs.env }}.yml
+          git commit -m "Deploy ${{ inputs.service-name }}:${{ inputs.image-tag }} to ${{ inputs.env }}"
+          git push

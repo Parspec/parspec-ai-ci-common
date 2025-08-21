@@ -28,7 +28,7 @@ spec:
         - env:
             - name: DEPLOYMENT_ENV
               value: staging
-          image: 227410688064.dkr.ecr.us-east-2.amazonaws.com/column-detection-service-dev:latest
+          image: 227410688064.dkr.ecr.us-east-2.amazonaws.com/table-parsing-service-dev:v1.4
           imagePullPolicy: IfNotPresent
           name: column-detection-dev
           ports:
