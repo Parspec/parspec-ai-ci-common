@@ -27,11 +27,25 @@ jobs:
 
       - name: Update image tag in deployment file
         run: |
+          # Debug: List current directory and files
+          echo "Current directory: $(pwd)"
+          echo "Listing files in current directory:"
+          ls -la
+          echo "Listing files in deployment directory:"
+          ls -la deployment/ || echo "deployment directory not found"
+          
           DEPLOY_FILE="deployment/${{ inputs.service-name }}-${{ inputs.env }}.yml"
           echo "Updating deployment file: $DEPLOY_FILE"
           
-          # Replace image tag in YAML (assuming format: image: repo/service-name-service-env:tag)
-          sed -i "s|\(image:.*${{ inputs.service-name }}-service-${{ inputs.env }}:\).*|\1${{ inputs.image-tag }}|" "$DEPLOY_FILE"
+          # Check if file exists
+          if [ -f "$DEPLOY_FILE" ]; then
+            echo "File exists, proceeding with update"
+            # Replace image tag in YAML (assuming format: image: repo/service-name-service-env:tag)
+            sed -i "s|\(image:.*${{ inputs.service-name }}-service-${{ inputs.env }}:\).*|\1${{ inputs.image-tag }}|" "$DEPLOY_FILE"
+          else
+            echo "ERROR: File $DEPLOY_FILE does not exist"
+            exit 1
+          fi
 
       - name: Commit and push changes
         run: |
