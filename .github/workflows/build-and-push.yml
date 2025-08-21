@@ -28,10 +28,8 @@ on:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-
     outputs:
-      image-tag: ${{ inputs.image-tag }}   # ✅ Expose image-tag to caller
-
+      image-tag: ${{ inputs.image-tag }} 
     steps:
       - name: Checkout Caller Code
         uses: actions/checkout@v4
