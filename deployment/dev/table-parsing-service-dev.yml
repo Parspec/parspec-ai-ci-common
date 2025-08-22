@@ -34,7 +34,7 @@ metadata:
                 f:app: {}
             f:spec:
               f:containers:
-                k:{"name":"table-parsing-service-dev"}:
+                k:{"name":"table-parsing-dev"}:
                   .: {}
                   f:env:
                     .: {}
@@ -76,7 +76,7 @@ metadata:
           f:template:
             f:spec:
               f:containers:
-                k:{"name":"table-parsing-service-dev"}:
+                k:{"name":"table-parsing-dev"}:
                   f:image: {}
     - apiVersion: apps/v1
       fieldsType: FieldsV1
@@ -109,7 +109,7 @@ metadata:
           f:replicas: {}
           f:updatedReplicas: {}
       manager: kube-controller-manager
-  name: table-parsing-service-dev
+  name: table-parsing-dev
   namespace: default
 spec:
   minReadySeconds: 60
@@ -118,7 +118,7 @@ spec:
   revisionHistoryLimit: 10
   selector:
     matchLabels:
-      app: table-parsing-service-dev
+      app: table-parsing-dev
   strategy:
     rollingUpdate:
       maxSurge: 1
@@ -128,9 +128,9 @@ spec:
     metadata:
       creationTimestamp: null
       labels:
-        app: table-parsing-service-dev
+        app: table-parsing-dev
     spec:
-      serviceAccountName: table-parsing-service-dev-sa
+      serviceAccountName: table-parsing-dev-sa
       containers:
         - env:
             - name: DEPLOYMENT_ENV
@@ -210,7 +210,7 @@ metadata:
           f:loadBalancer:
             f:ingress: {}
       manager: cloud-controller-manager
-  name: table-parsing-service-dev-service
+  name: table-parsing-dev-service
   namespace: default
 spec:
   allocateLoadBalancerNodePorts: true
@@ -224,7 +224,7 @@ spec:
       protocol: TCP
       targetPort: 8080
   selector:
-    app: table-parsing-service-dev
+    app: table-parsing-dev
   sessionAffinity: None
   type: LoadBalancer
   loadBalancerClass: eks.amazonaws.com/nlb
@@ -232,7 +232,7 @@ spec:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: table-parsing-service-dev-sa
+  name: table-parsing-dev-sa
   namespace: default
   annotations:
     eks.amazonaws.com/role-arn: arn:aws:iam::783952637912:role/table-parsing-irsa-role

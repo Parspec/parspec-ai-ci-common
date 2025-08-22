@@ -23,7 +23,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          DEPLOY_FILE="deployment/${SERVICE}-${ENV}.yml"
+          DEPLOY_FILE="deployment/${ENV}/${SERVICE}-${ENV}.yml"
           echo "🔎 Updating ${DEPLOY_FILE} to tag '${TAG}'"
 
           [ -f "$DEPLOY_FILE" ] || { echo "❌ Missing $DEPLOY_FILE"; exit 1; }
