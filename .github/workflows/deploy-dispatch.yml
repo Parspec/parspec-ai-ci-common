@@ -54,14 +54,8 @@ jobs:
 
           # Update ONLY the Deployment doc for that container
           yq -i '
-            select(.kind=="Deployment")
-            | .spec.template.spec.containers
-            |= ( map(
-                  if .name == strenv(TARGET_CONTAINER)
-                  then .image = strenv(NEW_IMAGE)
-                  else .
-                  end
-                ))
+            select(.kind == "Deployment")
+            | (.spec.template.spec.containers[] | select(.name == env(TARGET_CONTAINER)).image) = env(NEW_IMAGE)
           ' "$DEPLOY_FILE"
 
 
