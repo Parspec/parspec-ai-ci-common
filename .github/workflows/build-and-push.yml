@@ -12,40 +12,38 @@ on:
       env:
         required: false
         type: string
-        description: "Environment name (e.g., 'dev', 'staging', 'prod')"
+        description: "Environment name (e.g., dev/staging/prod)"
         default: "dev"
       image-tag:
         required: false
         type: string
-        description: "Optional Docker image tag (e.g., Git tag or SHA)"
+        description: "Docker image tag (e.g., Git tag or SHA)"
         default: "latest"
     secrets:
       AWS_ACCESS_KEY_ID:
         required: true
       AWS_SECRET_ACCESS_KEY:
         required: true
-    outputs:                                  # 👈 expose to caller here
+    outputs:
       image-tag:
-        description: "Effective image tag used for the image"
-        value: ${{ jobs.build-and-push.outputs.image-tag }}   # map from job
+        description: "The image tag used (built or reused)"
+        value: ${{ jobs.build-and-push.outputs.image-tag }}
+      image-uri:
+        description: "Full ECR image URI"
+        value: ${{ jobs.build-and-push.outputs.image-uri }}
+      built:
+        description: "true if we built/pushed; false if we reused existing"
+        value: ${{ jobs.build-and-push.outputs.built }}
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
     outputs:
-      image-tag: ${{ steps.export_tag.outputs.image_tag }}    # 👈 job output
+      image-tag: ${{ steps.export.outputs.tag }}
+      image-uri: ${{ steps.export.outputs.uri }}
+      built:     ${{ steps.export.outputs.built }}
     steps:
-      - name: Checkout Caller Code
-        uses: actions/checkout@v4
-        with:
-          path: caller-repo
-
-      - name: Checkout Central Dockerfiles
-        uses: actions/checkout@v4
-        with:
-          repository: Parspec/parspec-ai-ci-common
-          path: ci-cd-workflows-repo
-
+      # --- AWS first so we can check ECR before any heavy work ---
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -57,10 +55,68 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
+      # ---- EARLY EXIT if image tag already in ECR (except for mutable tags) ----
+      - name: Check if image:tag exists in ECR
+        id: check
+        env:
+          REPOSITORY: ${{ inputs.service-name }}-${{ inputs.env }}
+          TAG:        ${{ inputs.image-tag }}
+        run: |
+          set -euo pipefail
+          # Treat these tags as mutable → always rebuild
+          case "$TAG" in
+            latest|dev|main) echo "exists=false" >> "$GITHUB_OUTPUT"; exit 0 ;;
+          esac
+
+          if aws ecr describe-images \
+              --repository-name "$REPOSITORY" \
+              --image-ids imageTag="$TAG" \
+              --region us-east-2 >/dev/null 2>&1; then
+            echo "exists=true"  >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Export common outputs now (built=false by default, overridden later if we build)
+      - name: Export outputs (pre)
+        id: export
+        env:
+          REGISTRY:   ${{ steps.login-ecr.outputs.registry }}
+          REPOSITORY: ${{ inputs.service-name }}-${{ inputs.env }}
+          TAG:        ${{ inputs.image-tag }}
+          EXISTS:     ${{ steps.check.outputs.exists }}
+        run: |
+          set -euo pipefail
+          URI="${REGISTRY}/${REPOSITORY}:${TAG}"
+          echo "tag=${TAG}"   >> "$GITHUB_OUTPUT"
+          echo "uri=${URI}"   >> "$GITHUB_OUTPUT"
+          if [ "${EXISTS:-false}" = "true" ]; then
+            echo "built=false" >> "$GITHUB_OUTPUT"
+            echo "✅ Image already exists in ECR: ${URI} — skipping build & push."
+          else
+            echo "built=pending" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ---- Only do the heavy work if we need to build ----
+      - name: Checkout Caller Code
+        if: ${{ steps.check.outputs.exists != 'true' }}
+        uses: actions/checkout@v4
+        with:
+          path: caller-repo
+
+      - name: Checkout Central Dockerfiles
+        if: ${{ steps.check.outputs.exists != 'true' }}
+        uses: actions/checkout@v4
+        with:
+          repository: Parspec/parspec-ai-ci-common
+          path: ci-cd-workflows-repo
+
       - name: Install jq
+        if: ${{ steps.check.outputs.exists != 'true' }}
         run: sudo apt-get update && sudo apt-get install -y jq
 
       - name: Fetch Service Environment Variables from Secrets Manager
+        if: ${{ steps.check.outputs.exists != 'true' }}
         id: get-env-vars
         run: |
           SECRET_NAME="${{ inputs.service-name }}-${{ inputs.env }}"
@@ -69,48 +125,37 @@ jobs:
             --query SecretString \
             --output text \
             --region us-east-2 || echo "")
-
           if [ -z "$SECRET_JSON" ]; then
-            echo "::warning::No secret found for $SECRET_NAME"
+            echo "::notice title=Secrets::No secret found for $SECRET_NAME"
             echo "BUILD_ARGS_STRING=" >> $GITHUB_ENV
           else
             BUILD_ARGS_STRING=$(echo "$SECRET_JSON" | jq -r 'to_entries[] | "--build-arg \(.key)=\(.value)"' | tr '\n' ' ')
             echo "BUILD_ARGS_STRING=$BUILD_ARGS_STRING" >> $GITHUB_ENV
           fi
 
-          # Generate APP_MODULE dynamically from service name
-          SERVICE_NAME_UNDERSCORE=$(echo "${{ inputs.service-name }}" | sed 's/-/_/g' | sed 's/_service$//')
-          APP_MODULE="fastapi_${SERVICE_NAME_UNDERSCORE}:app"
-          echo "APP_MODULE=$APP_MODULE" >> $GITHUB_ENV
-          
-          
-
       - name: Copy shared package to service directory
+        if: ${{ steps.check.outputs.exists != 'true' }}
         run: |
-          cp -r ./caller-repo/shared ./caller-repo/${{ inputs.build-context }}/
-          echo "✅ Shared package copied to service directory"
-
-      - name: Export image tag used                      # 👈 set a step output
-        id: export_tag
-        run: echo "image_tag=${{ inputs.image-tag }}" >> "$GITHUB_OUTPUT"
+          cp -r ./caller-repo/shared ./caller-repo/${{ inputs.build-context }}/ || true
+          echo "✅ Shared package copied (or not present)."
 
       - name: Build, Tag, and Push Docker Image
+        if: ${{ steps.check.outputs.exists != 'true' }}
         env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REGISTRY:        ${{ steps.login-ecr.outputs.registry }}
           FULL_ECR_REPOSITORY: ${{ inputs.service-name }}-${{ inputs.env }}
-          IMAGE_TAG: ${{ steps.export_tag.outputs.image_tag }}
+          IMAGE_TAG:           ${{ inputs.image-tag }}
         run: |
-          echo "🔨 Building image for $FULL_ECR_REPOSITORY ..."
-          echo "📝 APP_MODULE: $APP_MODULE"
-          echo "📝 BUILD_ARGS_STRING: $BUILD_ARGS_STRING"
-          echo "🏷️ Image Tag: $IMAGE_TAG"
-
+          echo "🔨 Building $ECR_REGISTRY/$FULL_ECR_REPOSITORY:$IMAGE_TAG"
           docker build \
             -t $ECR_REGISTRY/$FULL_ECR_REPOSITORY:$IMAGE_TAG \
             -f ./ci-cd-workflows-repo/docker-templates/Dockerfile \
             ${BUILD_ARGS_STRING} \
-            --build-arg APP_MODULE=$APP_MODULE \
             ./caller-repo/${{ inputs.build-context }}
-
-          echo "🚀 Pushing image to ECR..."
+          echo "🚀 Pushing..."
           docker push $ECR_REGISTRY/$FULL_ECR_REPOSITORY:$IMAGE_TAG
+
+      - name: Mark built=true
+        if: ${{ steps.check.outputs.exists != 'true' }}
+        run: echo "built=true" >> "$GITHUB_OUTPUT"
+        id: markbuilt
