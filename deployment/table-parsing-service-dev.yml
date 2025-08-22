@@ -135,7 +135,7 @@ spec:
         - env:
             - name: DEPLOYMENT_ENV
               value: staging
-          image: 227410688064.dkr.ecr.us-east-2.amazonaws.com/table-parsing-service-dev:eb0ea9c8a19348bc70ffa8b0de012c7bf198dcd3
+          image: 227410688064.dkr.ecr.us-east-2.amazonaws.com/table-parsing-service-dev:8dabd8bf7d7e5a0ca314e86e5604eb8b9803c8df
           imagePullPolicy: IfNotPresent
           name: table-parsing-dev
           ports:
