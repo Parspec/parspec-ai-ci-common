@@ -139,18 +139,37 @@ jobs:
           cp -r ./caller-repo/shared ./caller-repo/${{ inputs.build-context }}/ || true
           echo "✅ Shared package copied (or not present)."
 
+      - name: Compute APP_MODULE from service-name
+        if: ${{ steps.check.outputs.exists != 'true' }}
+        id: appmod
+        run: |
+          # Derive fastapi_<service>:app from service-name (e.g., table-parsing-service -> fastapi_table_parsing:app)
+          SERVICE_NAME_UNDERSCORE="$(echo '${{ inputs.service-name }}' | sed 's/-/_/g; s/_service$//')"
+          APP_MODULE="fastapi_${SERVICE_NAME_UNDERSCORE}:app"
+
+          # Optional: fallback to src.main:app if present in the service (more robust)
+          if [ -f "./caller-repo/${{ inputs.build-context }}/src/main.py" ]; then
+            APP_MODULE="src.main:app"
+          fi
+
+          echo "Computed APP_MODULE=$APP_MODULE"
+          echo "APP_MODULE=$APP_MODULE" >> $GITHUB_ENV
+          echo "app_module=$APP_MODULE" >> $GITHUB_OUTPUT
       - name: Build, Tag, and Push Docker Image
+
         if: ${{ steps.check.outputs.exists != 'true' }}
         env:
           ECR_REGISTRY:        ${{ steps.login-ecr.outputs.registry }}
           FULL_ECR_REPOSITORY: ${{ inputs.service-name }}-${{ inputs.env }}
           IMAGE_TAG:           ${{ inputs.image-tag }}
+          
         run: |
           echo "🔨 Building $ECR_REGISTRY/$FULL_ECR_REPOSITORY:$IMAGE_TAG"
           docker build \
             -t $ECR_REGISTRY/$FULL_ECR_REPOSITORY:$IMAGE_TAG \
             -f ./ci-cd-workflows-repo/docker-templates/Dockerfile \
             ${BUILD_ARGS_STRING} \
+            --build-arg APP_MODULE=$APP_MODULE \
             ./caller-repo/${{ inputs.build-context }}
           echo "🚀 Pushing..."
           docker push $ECR_REGISTRY/$FULL_ECR_REPOSITORY:$IMAGE_TAG
