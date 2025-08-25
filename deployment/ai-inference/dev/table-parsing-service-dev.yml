@@ -135,7 +135,7 @@ spec:
         - env:
             - name: DEPLOYMENT_ENV
               value: staging
-          image: 227410688064.dkr.ecr.us-east-2.amazonaws.com/table-parsing-service-dev:8dabd8bf7d7e5a0ca314e86e5604eb8b9803c8df
+          image: 227410688064.dkr.ecr.us-east-2.amazonaws.com/table-parsing-service-dev:7cc2ab40bfff9176f26de9e0c706a4256f578e17
           imagePullPolicy: IfNotPresent
           name: table-parsing-service-dev
           ports:
@@ -164,75 +164,3 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       terminationGracePeriodSeconds: 30
----
-apiVersion: v1
-kind: Service
-metadata:
-  annotations:
-    loadBalancerClass: service.k8s.aws/nlb
-    service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: ip
-    service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
-    service.beta.kubernetes.io/aws-load-balancer-type: external
-    service.beta.kubernetes.io/aws-load-balancer-additional-resource-tags: map-migrated=migACLXAPHP5O
-  finalizers:
-    - service.kubernetes.io/load-balancer-cleanup
-  managedFields:
-    - apiVersion: v1
-      fieldsType: FieldsV1
-      fieldsV1:
-        f:metadata:
-          f:annotations:
-            .: {}
-            f:kubectl.kubernetes.io/last-applied-configuration: {}
-        f:spec:
-          f:allocateLoadBalancerNodePorts: {}
-          f:externalTrafficPolicy: {}
-          f:internalTrafficPolicy: {}
-          f:ports:
-            .: {}
-            k:{"port":80,"protocol":"TCP"}:
-              .: {}
-              f:port: {}
-              f:protocol: {}
-              f:targetPort: {}
-          f:selector: {}
-          f:sessionAffinity: {}
-          f:type: {}
-      manager: kubectl-client-side-apply
-    - apiVersion: v1
-      fieldsType: FieldsV1
-      fieldsV1:
-        f:metadata:
-          f:finalizers:
-            .: {}
-            v:"service.kubernetes.io/load-balancer-cleanup": {}
-        f:status:
-          f:loadBalancer:
-            f:ingress: {}
-      manager: cloud-controller-manager
-  name: table-parsing-service-dev-service
-  namespace: default
-spec:
-  allocateLoadBalancerNodePorts: true
-  externalTrafficPolicy: Cluster
-  internalTrafficPolicy: Cluster
-  ipFamilies:
-    - IPv4
-  ipFamilyPolicy: SingleStack
-  ports:
-    - port: 80
-      protocol: TCP
-      targetPort: 8080
-  selector:
-    app: table-parsing-service-dev
-  sessionAffinity: None
-  type: LoadBalancer
-  loadBalancerClass: eks.amazonaws.com/nlb
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: table-parsing-service-dev-sa
-  namespace: default
-  annotations:
-    eks.amazonaws.com/role-arn: arn:aws:iam::783952637912:role/table-parsing-irsa-role
