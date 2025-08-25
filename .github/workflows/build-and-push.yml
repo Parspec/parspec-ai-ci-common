@@ -22,7 +22,7 @@ on:
         required: false
         type: string
         description: "Docker image tag (SHA/semver). 'latest', 'dev', 'main' are treated as mutable."
-        default: "latest"   # expressions not allowed in workflow_call defaults
+        default: "latest"  # NOTE: expressions not allowed in workflow_call defaults
     outputs:
       image-tag:
         description: "The image tag used"
@@ -47,8 +47,7 @@ jobs:
       built:      ${{ steps.finalize.outputs.built }}
 
     steps:
-      # -------- Map target -> account / role / region / registry ----------
-      - name: Resolve target → account/role/region/registry
+      - name: "Resolve target to account/role/region/registry"
         id: tgt
         shell: bash
         run: |
@@ -72,13 +71,14 @@ jobs:
 
           ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
 
-          echo "AWS_ACCOUNT_ID=${AWS_ACCOUNT_ID}" >> "$GITHUB_OUTPUT"
-          echo "AWS_REGION=${AWS_REGION}"         >> "$GITHUB_OUTPUT"
-          echo "ROLE_ARN=${ROLE_ARN}"             >> "$GITHUB_OUTPUT"
-          echo "ECR_REGISTRY=${ECR_REGISTRY}"     >> "$GITHUB_OUTPUT"
+          {
+            echo "AWS_ACCOUNT_ID=${AWS_ACCOUNT_ID}"
+            echo "AWS_REGION=${AWS_REGION}"
+            echo "ROLE_ARN=${ROLE_ARN}"
+            echo "ECR_REGISTRY=${ECR_REGISTRY}"
+          } >> "$GITHUB_OUTPUT"
 
-      # -------- Assume AWS role via OIDC (no static keys) ----------
-      - name: Configure AWS credentials (OIDC)
+      - name: "Configure AWS credentials (OIDC)"
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ steps.tgt.outputs.ROLE_ARN }}
@@ -86,17 +86,16 @@ jobs:
           role-session-name: gha-${{ github.run_id }}
           audience: sts.amazonaws.com
 
-      - name: Verify AWS identity
+      - name: "Verify AWS identity"
         run: aws sts get-caller-identity
 
-      - name: Login to Amazon ECR
+      - name: "Login to Amazon ECR"
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
         with:
           registries: ${{ steps.tgt.outputs.AWS_ACCOUNT_ID }}
 
-      # -------- Ensure repo exists & check if tag exists ----------
-      - name: Ensure ECR repo and check image:tag
+      - name: "Ensure ECR repo and check image tag"
         id: ecr_check
         env:
           AWS_REGION:  ${{ steps.tgt.outputs.AWS_REGION }}
@@ -104,6 +103,7 @@ jobs:
           TAG:         ${{ inputs.image-tag }}
         run: |
           set -euo pipefail
+
           # 1) Ensure repo exists (create if missing)
           REPO_URI="$(aws ecr describe-repositories \
             --repository-names "$REPOSITORY" \
@@ -141,14 +141,13 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # -------- Only build if needed ----------
-      - name: Checkout caller repository
+      - name: "Checkout caller repository"
         if: ${{ steps.ecr_check.outputs.exists != 'true' }}
         uses: actions/checkout@v4
         with:
           path: caller-repo
 
-      - name: Checkout central Dockerfiles
+      - name: "Checkout central Dockerfiles"
         if: ${{ steps.ecr_check.outputs.exists != 'true' }}
         uses: actions/checkout@v4
         with:
@@ -156,11 +155,11 @@ jobs:
           ref: main
           path: ci-cd-workflows-repo
 
-      - name: Install jq
+      - name: "Install jq"
         if: ${{ steps.ecr_check.outputs.exists != 'true' }}
         run: sudo apt-get update && sudo apt-get install -y jq
 
-      - name: Fetch build args from AWS Secrets Manager
+      - name: "Fetch build args from AWS Secrets Manager"
         if: ${{ steps.ecr_check.outputs.exists != 'true' }}
         id: get_env
         env:
@@ -181,13 +180,12 @@ jobs:
             echo "BUILD_ARGS_STRING=$BUILD_ARGS_STRING" >> $GITHUB_ENV
           fi
 
-      - name: Optional: copy shared package
+      - name: "Copy shared package (optional)"
         if: ${{ steps.ecr_check.outputs.exists != 'true' }}
         run: |
           cp -r ./caller-repo/shared ./caller-repo/${{ inputs.build-context }}/ || true
-          echo "Shared package copied if present."
 
-      - name: Compute APP_MODULE (FastAPI heuristic)
+      - name: "Compute APP_MODULE (FastAPI heuristic)"
         if: ${{ steps.ecr_check.outputs.exists != 'true' }}
         id: appmod
         run: |
@@ -199,7 +197,7 @@ jobs:
           echo "APP_MODULE=$APP_MODULE" >> $GITHUB_ENV
           echo "app_module=$APP_MODULE"  >> $GITHUB_OUTPUT
 
-      - name: Build & Push image
+      - name: "Build and push image"
         if: ${{ steps.ecr_check.outputs.exists != 'true' }}
         env:
           ECR_REGISTRY: ${{ steps.tgt.outputs.ECR_REGISTRY }}
@@ -207,7 +205,6 @@ jobs:
           IMAGE_TAG:    ${{ inputs.image-tag }}
         run: |
           set -euo pipefail
-          echo "Building $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG"
           docker build \
             -t $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG \
             -t $ECR_REGISTRY/$REPOSITORY:latest \
@@ -215,13 +212,10 @@ jobs:
             ${BUILD_ARGS_STRING} \
             --build-arg APP_MODULE="$APP_MODULE" \
             ./caller-repo/${{ inputs.build-context }}
-
-          echo "Pushing tags…"
           docker push $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG
           docker push $ECR_REGISTRY/$REPOSITORY:latest
 
-      # -------- Finalize outputs (runs always) ----------
-      - name: Finalize outputs
+      - name: "Finalize outputs"
         id: finalize
         env:
           ECR_REGISTRY: ${{ steps.tgt.outputs.ECR_REGISTRY }}
@@ -235,8 +229,6 @@ jobs:
           echo "uri=${URI}"   >> "$GITHUB_OUTPUT"
           if [ "${EXISTS}" = "true" ]; then
             echo "built=false" >> "$GITHUB_OUTPUT"
-            echo "✅ Reused existing image: ${URI}"
           else
             echo "built=true"  >> "$GITHUB_OUTPUT"
-            echo "✅ Built & pushed image: ${URI}"
           fi
