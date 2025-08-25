@@ -56,33 +56,62 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       # ---- EARLY EXIT if image tag already in ECR (except for mutable tags) ----
-      - name: Check if image:tag exists in ECR
-        id: check
+      - name: Ensure ECR repo and check if image:tag exists
+        id: ecr_check
         env:
-          REPOSITORY: ${{ inputs.service-name }}-${{ inputs.env }}
+          AWS_REGION: us-east-2
+          REPOSITORY: ${{ inputs.service-name }}
           TAG:        ${{ inputs.image-tag }}
         run: |
           set -euo pipefail
-          # Treat these tags as mutable → always rebuild
+      
+          # 1) Ensure ECR repository exists (create if missing) and emit its URI
+          REPO_URI="$(aws ecr describe-repositories \
+            --repository-names "$REPOSITORY" \
+            --region "$AWS_REGION" \
+            --query 'repositories[0].repositoryUri' \
+            --output text 2>/dev/null || true)"
+      
+          if [ -z "$REPO_URI" ] || [ "$REPO_URI" = "None" ]; then
+            echo "ECR repo '$REPOSITORY' not found. Creating…"
+            REPO_URI="$(aws ecr create-repository \
+              --repository-name "$REPOSITORY" \
+              --image-scanning-configuration scanOnPush=true \
+              --region "$AWS_REGION" \
+              --query 'repository.repositoryUri' \
+              --output text)"
+            echo "Created ECR repo: $REPO_URI"
+          else
+            echo "ECR repo exists: $REPO_URI"
+          fi
+      
+          echo "repository-uri=$REPO_URI" >> "$GITHUB_OUTPUT"
+      
+          # 2) Treat certain tags as mutable → always rebuild
           case "$TAG" in
-            latest|dev|main) echo "exists=false" >> "$GITHUB_OUTPUT"; exit 0 ;;
+            latest|dev|main)
+              echo "exists=false" >> "$GITHUB_OUTPUT"
+              exit 0
+              ;;
           esac
-
+      
+          # 3) Check if the specific image:tag already exists
           if aws ecr describe-images \
               --repository-name "$REPOSITORY" \
               --image-ids imageTag="$TAG" \
-              --region us-east-2 >/dev/null 2>&1; then
+              --region "$AWS_REGION" >/dev/null 2>&1; then
             echo "exists=true"  >> "$GITHUB_OUTPUT"
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
+      
 
       # Export common outputs now (built=false by default, overridden later if we build)
       - name: Export outputs (pre)
         id: export
         env:
           REGISTRY:   ${{ steps.login-ecr.outputs.registry }}
-          REPOSITORY: ${{ inputs.service-name }}-${{ inputs.env }}
+          REPOSITORY: ${{ inputs.service-name }}
           TAG:        ${{ inputs.image-tag }}
           EXISTS:     ${{ steps.check.outputs.exists }}
         run: |
@@ -160,7 +189,7 @@ jobs:
         if: ${{ steps.check.outputs.exists != 'true' }}
         env:
           ECR_REGISTRY:        ${{ steps.login-ecr.outputs.registry }}
-          FULL_ECR_REPOSITORY: ${{ inputs.service-name }}-${{ inputs.env }}
+          FULL_ECR_REPOSITORY: ${{ inputs.service-name }}
           IMAGE_TAG:           ${{ inputs.image-tag }}
           
         run: |
