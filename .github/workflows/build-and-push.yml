@@ -12,21 +12,20 @@ on:
       env:
         required: false
         type: string
-        description: "Environment name (e.g., dev/staging/prod)"
+        description: "Environment name (e.g., dev/prod). Used for secret suffix."
         default: "dev"
+      target:
+        required: true
+        type: string
+        description: "AWS account target: ai-dev | ai-inference"
       image-tag:
         required: false
         type: string
-        description: "Docker image tag (e.g., Git tag or SHA)"
-        default: "latest"
-    secrets:
-      AWS_ACCESS_KEY_ID:
-        required: true
-      AWS_SECRET_ACCESS_KEY:
-        required: true
+        description: "Docker image tag (SHA/semver). 'latest', 'dev', 'main' are treated as mutable."
+        default: "${{ github.sha }}"
     outputs:
       image-tag:
-        description: "The image tag used (built or reused)"
+        description: "The image tag used"
         value: ${{ jobs.build-and-push.outputs.image-tag }}
       image-uri:
         description: "Full ECR image URI"
@@ -35,66 +34,96 @@ on:
         description: "true if we built/pushed; false if we reused existing"
         value: ${{ jobs.build-and-push.outputs.built }}
 
+permissions:
+  id-token: write   # required for OIDC
+  contents: read    # required to checkout repos
+
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
     outputs:
-      image-tag: ${{ steps.export.outputs.tag }}
-      image-uri: ${{ steps.export.outputs.uri }}
-      built:     ${{ steps.export.outputs.built }}
+      image-tag: ${{ steps.finalize.outputs.tag }}
+      image-uri:  ${{ steps.finalize.outputs.uri }}
+      built:      ${{ steps.finalize.outputs.built }}
+
     steps:
-      # --- AWS first so we can check ECR before any heavy work ---
-      - name: Configure AWS Credentials
+      # -------- Map target -> account / role / region / registry ----------
+      - name: Resolve target → account/role/region/registry
+        id: tgt
+        run: |
+          set -euo pipefail
+          case "${{ inputs.target }}" in
+            ai-dev)
+              echo "AWS_ACCOUNT_ID=227410688064" >> "$GITHUB_OUTPUT"
+              echo "AWS_REGION=us-east-2"        >> "$GITHUB_OUTPUT"
+              echo "ROLE_ARN=arn:aws:iam::227410688064:role/GitHubActionsDeployRole" >> "$GITHUB_OUTPUT"
+              ;;
+            ai-inference)
+              echo "AWS_ACCOUNT_ID=783952637912" >> "$GITHUB_OUTPUT"
+              echo "AWS_REGION=us-east-2"        >> "$GITHUB_OUTPUT"
+              echo "ROLE_ARN=arn:aws:iam::783952637912:role/GitHubActionsDeployRole" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "Unsupported target: ${{ inputs.target }}" >&2
+              exit 1
+              ;;
+          esac
+          echo "ECR_REGISTRY=${{ steps.tgt.outputs.AWS_ACCOUNT_ID }}.dkr.ecr.${{ steps.tgt.outputs.AWS_REGION }}.amazonaws.com" >> "$GITHUB_OUTPUT"
+
+      # -------- Assume AWS role via OIDC (no static keys) ----------
+      - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-2
+          role-to-assume: ${{ steps.tgt.outputs.ROLE_ARN }}
+          aws-region:     ${{ steps.tgt.outputs.AWS_REGION }}
+          role-session-name: gha-${{ github.run_id }}
+          audience: sts.amazonaws.com
+
+      - name: Verify AWS identity
+        run: aws sts get-caller-identity
 
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registries: ${{ steps.tgt.outputs.AWS_ACCOUNT_ID }}
 
-      # ---- EARLY EXIT if image tag already in ECR (except for mutable tags) ----
-      - name: Ensure ECR repo and check if image:tag exists
+      # -------- Ensure repo exists & check if tag exists ----------
+      - name: Ensure ECR repo and check image:tag
         id: ecr_check
         env:
-          AWS_REGION: us-east-2
-          REPOSITORY: ${{ inputs.service-name }}
-          TAG:        ${{ inputs.image-tag }}
+          AWS_REGION:  ${{ steps.tgt.outputs.AWS_REGION }}
+          REPOSITORY:  ${{ inputs.service-name }}
+          TAG:         ${{ inputs.image-tag }}
         run: |
           set -euo pipefail
-      
-          # 1) Ensure ECR repository exists (create if missing) and emit its URI
+          # 1) Ensure repo exists (create if missing)
           REPO_URI="$(aws ecr describe-repositories \
             --repository-names "$REPOSITORY" \
             --region "$AWS_REGION" \
             --query 'repositories[0].repositoryUri' \
             --output text 2>/dev/null || true)"
-      
           if [ -z "$REPO_URI" ] || [ "$REPO_URI" = "None" ]; then
-            echo "ECR repo '$REPOSITORY' not found. Creating…"
+            echo "Creating ECR repo: $REPOSITORY"
             REPO_URI="$(aws ecr create-repository \
               --repository-name "$REPOSITORY" \
               --image-scanning-configuration scanOnPush=true \
               --region "$AWS_REGION" \
               --query 'repository.repositoryUri' \
               --output text)"
-            echo "Created ECR repo: $REPO_URI"
           else
             echo "ECR repo exists: $REPO_URI"
           fi
-      
           echo "repository-uri=$REPO_URI" >> "$GITHUB_OUTPUT"
-      
-          # 2) Treat certain tags as mutable → always rebuild
+
+          # 2) Mutable tags → always rebuild
           case "$TAG" in
             latest|dev|main)
               echo "exists=false" >> "$GITHUB_OUTPUT"
               exit 0
               ;;
           esac
-      
+
           # 3) Check if the specific image:tag already exists
           if aws ecr describe-images \
               --repository-name "$REPOSITORY" \
@@ -104,56 +133,39 @@ jobs:
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
-      
 
-      # Export common outputs now (built=false by default, overridden later if we build)
-      - name: Export outputs (pre)
-        id: export
-        env:
-          REGISTRY:   ${{ steps.login-ecr.outputs.registry }}
-          REPOSITORY: ${{ inputs.service-name }}
-          TAG:        ${{ inputs.image-tag }}
-          EXISTS:     ${{ steps.check.outputs.exists }}
-        run: |
-          set -euo pipefail
-          URI="${REGISTRY}/${REPOSITORY}:${TAG}"
-          echo "tag=${TAG}"   >> "$GITHUB_OUTPUT"
-          echo "uri=${URI}"   >> "$GITHUB_OUTPUT"
-          if [ "${EXISTS:-false}" = "true" ]; then
-            echo "built=false" >> "$GITHUB_OUTPUT"
-            echo "✅ Image already exists in ECR: ${URI} — skipping build & push."
-          else
-            echo "built=pending" >> "$GITHUB_OUTPUT"
-          fi
-
-      # ---- Only do the heavy work if we need to build ----
-      - name: Checkout Caller Code
-        if: ${{ steps.check.outputs.exists != 'true' }}
+      # -------- Only build if needed ----------
+      - name: Checkout caller repository
+        if: ${{ steps.ecr_check.outputs.exists != 'true' }}
         uses: actions/checkout@v4
         with:
           path: caller-repo
 
-      - name: Checkout Central Dockerfiles
-        if: ${{ steps.check.outputs.exists != 'true' }}
+      - name: Checkout central Dockerfiles
+        if: ${{ steps.ecr_check.outputs.exists != 'true' }}
         uses: actions/checkout@v4
         with:
           repository: Parspec/parspec-ai-ci-common
+          ref: main
           path: ci-cd-workflows-repo
 
       - name: Install jq
-        if: ${{ steps.check.outputs.exists != 'true' }}
+        if: ${{ steps.ecr_check.outputs.exists != 'true' }}
         run: sudo apt-get update && sudo apt-get install -y jq
 
-      - name: Fetch Service Environment Variables from Secrets Manager
-        if: ${{ steps.check.outputs.exists != 'true' }}
-        id: get-env-vars
+      - name: Fetch build args from AWS Secrets Manager
+        if: ${{ steps.ecr_check.outputs.exists != 'true' }}
+        id: get_env
+        env:
+          AWS_REGION:  ${{ steps.tgt.outputs.AWS_REGION }}
+          SECRET_NAME: ${{ inputs.service-name }}-${{ inputs.env }}
         run: |
-          SECRET_NAME="${{ inputs.service-name }}-${{ inputs.env }}"
+          set -euo pipefail
           SECRET_JSON=$(aws secretsmanager get-secret-value \
             --secret-id "$SECRET_NAME" \
             --query SecretString \
             --output text \
-            --region us-east-2 || echo "")
+            --region "$AWS_REGION" || echo "")
           if [ -z "$SECRET_JSON" ]; then
             echo "::notice title=Secrets::No secret found for $SECRET_NAME"
             echo "BUILD_ARGS_STRING=" >> $GITHUB_ENV
@@ -162,48 +174,62 @@ jobs:
             echo "BUILD_ARGS_STRING=$BUILD_ARGS_STRING" >> $GITHUB_ENV
           fi
 
-      - name: Copy shared package to service directory
-        if: ${{ steps.check.outputs.exists != 'true' }}
+      - name: Optional: copy shared package
+        if: ${{ steps.ecr_check.outputs.exists != 'true' }}
         run: |
           cp -r ./caller-repo/shared ./caller-repo/${{ inputs.build-context }}/ || true
-          echo "✅ Shared package copied (or not present)."
+          echo "Shared package copied if present."
 
-      - name: Compute APP_MODULE from service-name
-        if: ${{ steps.check.outputs.exists != 'true' }}
+      - name: Compute APP_MODULE (FastAPI heuristic)
+        if: ${{ steps.ecr_check.outputs.exists != 'true' }}
         id: appmod
         run: |
-          # Derive fastapi_<service>:app from service-name (e.g., table-parsing-service -> fastapi_table_parsing:app)
-          SERVICE_NAME_UNDERSCORE="$(echo '${{ inputs.service-name }}' | sed 's/-/_/g; s/_service$//')"
-          APP_MODULE="fastapi_${SERVICE_NAME_UNDERSCORE}:app"
-
-          # Optional: fallback to src.main:app if present in the service (more robust)
+          SERVICE_UNDER="$(echo '${{ inputs.service-name }}' | sed 's/-/_/g; s/_service$//')"
+          APP_MODULE="fastapi_${SERVICE_UNDER}:app"
           if [ -f "./caller-repo/${{ inputs.build-context }}/src/main.py" ]; then
             APP_MODULE="src.main:app"
           fi
-
-          echo "Computed APP_MODULE=$APP_MODULE"
           echo "APP_MODULE=$APP_MODULE" >> $GITHUB_ENV
-          echo "app_module=$APP_MODULE" >> $GITHUB_OUTPUT
-      - name: Build, Tag, and Push Docker Image
+          echo "app_module=$APP_MODULE"  >> $GITHUB_OUTPUT
 
-        if: ${{ steps.check.outputs.exists != 'true' }}
+      - name: Build & Push image
+        if: ${{ steps.ecr_check.outputs.exists != 'true' }}
         env:
-          ECR_REGISTRY:        ${{ steps.login-ecr.outputs.registry }}
-          FULL_ECR_REPOSITORY: ${{ inputs.service-name }}
-          IMAGE_TAG:           ${{ inputs.image-tag }}
-          
+          ECR_REGISTRY: ${{ steps.tgt.outputs.ECR_REGISTRY }}
+          REPOSITORY:   ${{ inputs.service-name }}
+          IMAGE_TAG:    ${{ inputs.image-tag }}
         run: |
-          echo "🔨 Building $ECR_REGISTRY/$FULL_ECR_REPOSITORY:$IMAGE_TAG"
+          set -euo pipefail
+          echo "Building $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG"
           docker build \
-            -t $ECR_REGISTRY/$FULL_ECR_REPOSITORY:$IMAGE_TAG \
+            -t $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG \
+            -t $ECR_REGISTRY/$REPOSITORY:latest \
             -f ./ci-cd-workflows-repo/docker-templates/Dockerfile \
             ${BUILD_ARGS_STRING} \
-            --build-arg APP_MODULE=$APP_MODULE \
+            --build-arg APP_MODULE="$APP_MODULE" \
             ./caller-repo/${{ inputs.build-context }}
-          echo "🚀 Pushing..."
-          docker push $ECR_REGISTRY/$FULL_ECR_REPOSITORY:$IMAGE_TAG
 
-      - name: Mark built=true
-        if: ${{ steps.check.outputs.exists != 'true' }}
-        run: echo "built=true" >> "$GITHUB_OUTPUT"
-        id: markbuilt
+          echo "Pushing tags…"
+          docker push $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$REPOSITORY:latest
+
+      # -------- Finalize outputs (runs always) ----------
+      - name: Finalize outputs
+        id: finalize
+        env:
+          ECR_REGISTRY: ${{ steps.tgt.outputs.ECR_REGISTRY }}
+          REPOSITORY:   ${{ inputs.service-name }}
+          TAG:          ${{ inputs.image-tag }}
+          EXISTS:       ${{ steps.ecr_check.outputs.exists }}
+        run: |
+          set -euo pipefail
+          URI="${ECR_REGISTRY}/${REPOSITORY}:${TAG}"
+          echo "tag=${TAG}"   >> "$GITHUB_OUTPUT"
+          echo "uri=${URI}"   >> "$GITHUB_OUTPUT"
+          if [ "${EXISTS}" = "true" ]; then
+            echo "built=false" >> "$GITHUB_OUTPUT"
+            echo "✅ Reused existing image: ${URI}"
+          else
+            echo "built=true"  >> "$GITHUB_OUTPUT"
+            echo "✅ Built & pushed image: ${URI}"
+          fi
