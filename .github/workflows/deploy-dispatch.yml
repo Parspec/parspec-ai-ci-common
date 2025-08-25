@@ -18,12 +18,13 @@ jobs:
           echo "SERVICE=${{ github.event.client_payload.service }}" >> $GITHUB_ENV
           echo "ENV=${{ github.event.client_payload.env }}"         >> $GITHUB_ENV
           echo "TAG=${{ github.event.client_payload.image_tag }}"   >> $GITHUB_ENV
+          echo "ACCOUNT=${{ github.event.client_payload.account }}" >> $GITHUB_ENV
 
       - name: Update deployment file and push
         run: |
           set -euo pipefail
 
-          DEPLOY_FILE="deployment/${ENV}/${SERVICE}-${ENV}.yml"
+          DEPLOY_FILE="deployment/${ACCOUNT}/${ENV}/${SERVICE}-${ENV}.yml"
           echo "🔎 Updating ${DEPLOY_FILE} to tag '${TAG}'"
 
           [ -f "$DEPLOY_FILE" ] || { echo "❌ Missing $DEPLOY_FILE"; exit 1; }
