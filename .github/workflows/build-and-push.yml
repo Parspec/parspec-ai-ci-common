@@ -213,7 +213,6 @@ jobs:
             --build-arg APP_MODULE="$APP_MODULE" \
             ./caller-repo/${{ inputs.build-context }}
           docker push $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG
-          docker push $ECR_REGISTRY/$REPOSITORY:latest
 
       - name: "Finalize outputs"
         id: finalize
