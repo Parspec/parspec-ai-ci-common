@@ -34,7 +34,7 @@ metadata:
                 f:app: {}
             f:spec:
               f:containers:
-                k:{"name":"table-parsing-service-prod"}:
+                k:{"name":"table-parsing-prod"}:
                   .: {}
                   f:env:
                     .: {}
@@ -76,7 +76,7 @@ metadata:
           f:template:
             f:spec:
               f:containers:
-                k:{"name":"table-parsing-service-prod"}:
+                k:{"name":"table-parsing-prod"}:
                   f:image: {}
     - apiVersion: apps/v1
       fieldsType: FieldsV1
@@ -109,7 +109,7 @@ metadata:
           f:replicas: {}
           f:updatedReplicas: {}
       manager: kube-controller-manager
-  name: table-parsing-service-prod
+  name: table-parsing-prod
   namespace: default
 spec:
   minReadySeconds: 60
@@ -118,7 +118,7 @@ spec:
   revisionHistoryLimit: 10
   selector:
     matchLabels:
-      app: table-parsing-service-prod
+      app: table-parsing-prod
   strategy:
     rollingUpdate:
       maxSurge: 1
@@ -128,7 +128,7 @@ spec:
     metadata:
       creationTimestamp: null
       labels:
-        app: table-parsing-service-prod
+        app: table-parsing-prod
     spec:
       containers:
         - env:
@@ -209,7 +209,7 @@ metadata:
           f:loadBalancer:
             f:ingress: {}
       manager: cloud-controller-manager
-  name: table-parsing-service-prod-service
+  name: table-parsing-prod-service
   namespace: default
 spec:
   allocateLoadBalancerNodePorts: true
@@ -223,7 +223,7 @@ spec:
       protocol: TCP
       targetPort: 8080
   selector:
-    app: table-parsing-service-prod
+    app: table-parsing-prod
   sessionAffinity: None
   type: LoadBalancer
   loadBalancerClass: eks.amazonaws.com/nlb

@@ -1,0 +1,120 @@
+# --- IRSA ServiceAccount ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: rfq-autotable-prod-sa
+  namespace: default
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::783952637912:role/rfq-autotable-irsa-role
+---
+# --- Deployment ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rfq-autotable-prod
+  namespace: default
+  labels:
+    environment: dev
+spec:
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: rfq-autotable-prod
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app: rfq-autotable-prod
+    spec:
+      serviceAccountName: rfq-autotable-prod-sa   # :white_check_mark: IRSA added here
+      containers:
+        - name: rfq-autotable-service-prod
+          image: 783952637912.dkr.ecr.us-east-2.amazonaws.com/rfq-autotable-service:1.29
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: DEPLOYMENT_ENV
+              value: staging
+          ports:
+            - containerPort: 8000
+              name: http
+              protocol: TCP
+          resources:
+            requests:
+              nvidia.com/gpu: "1"
+              cpu: "11"  # Force g4dn.4xlarge (16 vCPUs) - g4dn.xlarge only has 4 vCPUs
+              memory: "54Gi"  # Force g4dn.4xlarge (64 GiB) - g4dn.xlarge only has 16 GiB
+              ephemeral-storage: 20Gi
+            limits:
+              nvidia.com/gpu: "1"
+              cpu: "12"  # Leave some CPU for system processes
+              memory: "68Gi"  # Leave some memory for system processes
+              ephemeral-storage: 20Gi
+          securityContext:
+            capabilities:
+              drop:
+                - NET_RAW
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+      imagePullSecrets:
+        - name: ecr-secret
+      restartPolicy: Always
+      nodeSelector:
+        nvidia.com/gpu.present: "true"
+      # Force g4dn.2xlarge instances with strict requirements
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: karpenter.k8s.aws/instance-family
+                    operator: In
+                    values: ["g4dn"]
+                  - key: karpenter.k8s.aws/instance-size
+                    operator: In
+                    values: ["4xlarge"]
+                  - key: nvidia.com/gpu.present
+                    operator: In
+                    values: ["true"]
+      tolerations:
+        - key: "nvidia.com/gpu"
+          value: "true"
+          effect: "NoSchedule"
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 30
+      schedulerName: default-scheduler
+---
+# --- LoadBalancer Service ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rfq-autotable-prod-service
+  namespace: default
+  annotations:
+    loadBalancerClass: service.k8s.aws/nlb
+    service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: ip
+    service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
+    service.beta.kubernetes.io/aws-load-balancer-type: external
+  finalizers:
+    - service.kubernetes.io/load-balancer-cleanup
+spec:
+  type: LoadBalancer
+  selector:
+    app: rfq-autotable-prod
+  ports:
+    - port: 80
+      targetPort: 8000
+      protocol: TCP
+  allocateLoadBalancerNodePorts: true
+  externalTrafficPolicy: Cluster
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+    - IPv4
+  ipFamilyPolicy: SingleStack
+  sessionAffinity: None

@@ -30,7 +30,7 @@ spec:
               value: production
           image: 783952637912.dkr.ecr.us-east-2.amazonaws.com/column-detection-service:v2.3
           imagePullPolicy: IfNotPresent
-          name: column-detection-prod
+          name: column-detection-service-prod
           ports:
             - containerPort: 8080
               name: server-port
