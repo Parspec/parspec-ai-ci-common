@@ -81,7 +81,7 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       terminationGracePeriodSeconds: 30
-       volumes:
+      volumes:
         - name: logs
           emptyDir: {}
         - name: fluent-bit-info
