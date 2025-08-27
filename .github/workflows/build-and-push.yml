@@ -23,6 +23,10 @@ on:
         type: string
         description: "Docker image tag (SHA/semver). 'latest', 'dev', 'main' are treated as mutable."
         default: "latest"  # NOTE: expressions not allowed in workflow_call defaults
+      github-token:
+        required: false
+        type: string
+        description: "GitHub token for private dependencies"
     outputs:
       image-tag:
         description: "The image tag used"
@@ -211,6 +215,7 @@ jobs:
             -f ./ci-cd-workflows-repo/docker-templates/Dockerfile \
             ${BUILD_ARGS_STRING} \
             --build-arg APP_MODULE="$APP_MODULE" \
+            --build-arg GITHUB_TOKEN="${{ inputs.github-token }}" \
             ./caller-repo/${{ inputs.build-context }}
           docker push $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG
 

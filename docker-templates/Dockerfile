@@ -22,7 +22,7 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app/src:/app/shared \
     TEMP_DIR=/app/temp \
     APP_MODULE=$APP_MODULE
-    
+
 RUN apt-get update && apt-get install -y --no-install-recommends git \
     && rm -rf /var/lib/apt/lists/*
 
@@ -45,7 +45,9 @@ COPY . /app/
 RUN pip install -e /app/shared || true
 
 # Python deps – ensure requirements.txt includes: fastapi, uvicorn[standard], pydantic
-RUN if [ -f "requirements.txt" ]; then pip install --no-cache-dir -r requirements.txt; else echo "No requirements.txt found"; fi
+RUN git config --global url."https://${GITHUB_TOKEN}:x-oauth-basic@github.com/".insteadOf "https://github.com/" && \
+    pip install --no-cache-dir -r requirements.txt
+
 
 # (Optional) Smoke test AFTER deps are installed
 # Comment out this block if it still triggers import-time side effects during build
