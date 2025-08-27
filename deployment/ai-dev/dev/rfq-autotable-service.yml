@@ -34,7 +34,7 @@ spec:
       serviceAccountName: rfq-autotable-dev-sa   # :white_check_mark: IRSA added here
       containers:
         - name: rfq-autotable-service-dev
-          image: 783952637912.dkr.ecr.us-east-2.amazonaws.com/rfq-autotable-service:1.29
+          image: 227410688064.dkr.ecr.us-east-2.amazonaws.com/rfq-autotable-service:1.29
           imagePullPolicy: IfNotPresent
           env:
             - name: DEPLOYMENT_ENV
