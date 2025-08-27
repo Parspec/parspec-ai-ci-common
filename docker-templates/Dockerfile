@@ -50,6 +50,7 @@ COPY . /app/
 
 # If shared is a real package (pyproject.toml/setup.py), install it; otherwise it’s importable via PYTHONPATH
 RUN pip install -e /app/shared || true
+RUN pip install prometheus_client
 
 # Python deps – ensure requirements.txt includes: fastapi, uvicorn[standard], pydantic
 # RUN git config --global url."https://${GITHUB_TOKEN}:x-oauth-basic@github.com/".insteadOf "https://github.com/" && \
