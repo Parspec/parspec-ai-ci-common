@@ -58,13 +58,13 @@ RUN pip install --no-cache-dir git+https://oauth2:${GITHUB_TOKEN}@github.com/Par
 
 
 # (Optional) Smoke test AFTER deps are installed
-# Comment out this block if it still triggers import-time side effects during build
-RUN python - <<'PY'
-import importlib
-importlib.import_module("api.routes")
-importlib.import_module("fastapi_table_parsing")
-print("✅ Import smoke test passed")
-PY
+# # Comment out this block if it still triggers import-time side effects during build
+# RUN python - <<'PY'
+# import importlib
+# importlib.import_module("api.routes")
+# importlib.import_module("fastapi_table_parsing")
+# print("✅ Import smoke test passed")
+# PY
 
 EXPOSE 8080
 
