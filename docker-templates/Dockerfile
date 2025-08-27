@@ -23,6 +23,13 @@ ENV PYTHONUNBUFFERED=1 \
     TEMP_DIR=/app/temp \
     APP_MODULE=$APP_MODULE
 
+# Check if GITHUB_TOKEN is present and not empty
+RUN if [ -z "$GITHUB_TOKEN" ]; then \
+      echo "GITHUB_TOKEN is empty. Exiting build." && exit 1; \
+    else \
+      echo "GITHUB_TOKEN is present."; \
+    fi
+
 RUN apt-get update && apt-get install -y --no-install-recommends git \
     && rm -rf /var/lib/apt/lists/*
 
