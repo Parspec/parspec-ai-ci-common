@@ -7,6 +7,8 @@ ARG AWS_REGION
 ARG P0_CLASSIFICATION_ENDPOINT
 ARG MODEL_S3_PATH
 ARG APP_MODULE
+ARG GITHUB_TOKEN
+
 
 # Runtime env
 ENV PYTHONUNBUFFERED=1 \
@@ -20,6 +22,9 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app/src:/app/shared \
     TEMP_DIR=/app/temp \
     APP_MODULE=$APP_MODULE
+    
+RUN apt-get update && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
