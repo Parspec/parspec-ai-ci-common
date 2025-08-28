@@ -268,4 +268,4 @@ metadata:
   name: table-parsing-dev-sa
   namespace: default
   annotations:
-    eks.amazonaws.com/role-arn: arn:aws:iam::783952637912:role/table-parsing-irsa-role
+    eks.amazonaws.com/role-arn: arn:aws:iam::783952637912:role/crossAccountRole
