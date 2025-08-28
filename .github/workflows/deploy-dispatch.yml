@@ -60,15 +60,8 @@ jobs:
           export TARGET_CONTAINER="${SERVICE}-${ENV}"
           
           # safe update: only touch Deployment docs; only change the matching container's image; keep all other docs
-          /usr/local/bin/yq ea 'if .kind == "Deployment"
-            then .spec.template.spec.containers |=
-                 (map(if .name == env(TARGET_CONTAINER)
-                      then .image = env(NEW_IMAGE)
-                      else . end))
-            else . end' "$DEPLOY_FILE" > "$DEPLOY_FILE.tmp" && mv "$DEPLOY_FILE.tmp" "$DEPLOY_FILE"
-          
-          
-          
+          /usr/local/bin/yq ea -i 'if .kind == "Deployment" then .spec.template.spec.containers |= (map(if .name == env(TARGET_CONTAINER) then .image = env(NEW_IMAGE) else . end)) else . end' "$DEPLOY_FILE"
+
           echo "🔁 Diff:"
           git --no-pager diff -- "$DEPLOY_FILE" || true
 
