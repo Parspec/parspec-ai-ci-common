@@ -155,6 +155,9 @@ spec:
             capabilities:
               drop:
                 - NET_RAW
+          volumeMounts:
+            - name: logs
+              mountPath: /app/app-logs
           terminationMessagePath: /dev/termination-log
           terminationMessagePolicy: File
            # --- Fluent Bit sidecar container ---
@@ -268,4 +271,4 @@ metadata:
   name: table-parsing-dev-sa
   namespace: default
   annotations:
-    eks.amazonaws.com/role-arn: arn:aws:iam::783952637912:role/crossAccountRole
+    eks.amazonaws.com/role-arn: arn:aws:iam::783952637912:role/table-parsing-irsa-role
