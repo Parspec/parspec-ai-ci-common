@@ -23,18 +23,19 @@ jobs:
       - name: Update deployment file and push
         run: |
           set -euo pipefail
-
+        
           DEPLOY_FILE="deployment/${ACCOUNT}/${ENV}/${SERVICE}.yml"
           echo "🔎 Updating ${DEPLOY_FILE} to tag '${TAG}'"
-
+        
           [ -f "$DEPLOY_FILE" ] || { echo "❌ Missing $DEPLOY_FILE"; exit 1; }
 
-          # yq
+          # yq v4
           sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.44.1/yq_linux_amd64
           sudo chmod +x /usr/local/bin/yq
+          /usr/local/bin/yq --version
 
           # Read current image from Deployment only
-          CUR_IMAGE=$(yq 'select(.kind=="Deployment") | .spec.template.spec.containers[0].image' "$DEPLOY_FILE")
+          CUR_IMAGE=$(/usr/local/bin/yq e 'select(.kind=="Deployment") | .spec.template.spec.containers[0].image' "$DEPLOY_FILE")
           [ -n "$CUR_IMAGE" ] && [ "$CUR_IMAGE" != "null" ] || { echo "❌ Could not read current image"; exit 1; }
 
           # Preserve repo, swap only tag
@@ -49,18 +50,11 @@ jobs:
             exit 0
           fi
 
-          # Update ONLY the Deployment doc
           # Precompute container name
-          # ensure we call yq v4 explicitly
-          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.44.1/yq_linux_amd64
-          sudo chmod +x /usr/local/bin/yq
-          /usr/local/bin/yq --version
-          
-          # set the container name (you already do this)
           export TARGET_CONTAINER="${SERVICE}-${ENV}"
-          
-          # safe update: only touch Deployment docs; only change the matching container's image; keep all other docs
-          /usr/local/bin/yq ea -i 'if .kind == "Deployment" then .spec.template.spec.containers |= (map(if .name == env(TARGET_CONTAINER) then .image = env(NEW_IMAGE) else . end)) else . end' "$DEPLOY_FILE"
+
+          # Update ONLY the Deployment doc; preserve everything else
+          /usr/local/bin/yq eval-all --inplace 'if .kind == "Deployment" then .spec.template.spec.containers |= (map(if .name == env(TARGET_CONTAINER) then .image = env(NEW_IMAGE) else . end)) else . end' "$DEPLOY_FILE"
 
           echo "🔁 Diff:"
           git --no-pager diff -- "$DEPLOY_FILE" || true
