@@ -51,12 +51,24 @@ jobs:
 
           # Update ONLY the Deployment doc
           # Precompute container name
+          # ensure we call yq v4 explicitly
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.44.1/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+          /usr/local/bin/yq --version
+          
+          # set the container name (you already do this)
           export TARGET_CONTAINER="${SERVICE}-${ENV}"
-
-          # Update ONLY the Deployment doc for that container
-          yq e -i 'if .kind == "Deployment" then .spec.template.spec.containers |= (map(if .name == env(TARGET_CONTAINER) then .image = env(NEW_IMAGE) else . end)) else . end' "$DEPLOY_FILE"
-
-
+          
+          # safe update: only touch Deployment docs; only change the matching container's image; keep all other docs
+          /usr/local/bin/yq ea 'if .kind == "Deployment"
+            then .spec.template.spec.containers |=
+                 (map(if .name == env(TARGET_CONTAINER)
+                      then .image = env(NEW_IMAGE)
+                      else . end))
+            else . end' "$DEPLOY_FILE" > "$DEPLOY_FILE.tmp" && mv "$DEPLOY_FILE.tmp" "$DEPLOY_FILE"
+          
+          
+          
           echo "🔁 Diff:"
           git --no-pager diff -- "$DEPLOY_FILE" || true
 
