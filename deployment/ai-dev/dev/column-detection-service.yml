@@ -121,7 +121,7 @@ spec:
   sessionAffinity: None
   type: LoadBalancer
   loadBalancerClass: eks.amazonaws.com/nlb
----
+  
 apiVersion: v1
 kind: ServiceAccount
 metadata:
