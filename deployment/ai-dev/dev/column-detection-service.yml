@@ -3,7 +3,7 @@ kind: Deployment
 metadata:
   labels:
     environment: dev
-  name: column-detection-dev
+  name: column-detection-service-dev
   namespace: default
 spec:
   minReadySeconds: 60

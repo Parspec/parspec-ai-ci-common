@@ -11,7 +11,7 @@ metadata:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: rfq-autotable-dev
+  name: rfq-autotable-service-dev
   namespace: default
   labels:
     environment: dev

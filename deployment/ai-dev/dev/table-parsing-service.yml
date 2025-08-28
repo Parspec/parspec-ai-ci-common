@@ -109,7 +109,7 @@ metadata:
           f:replicas: {}
           f:updatedReplicas: {}
       manager: kube-controller-manager
-  name: table-parsing-dev
+  name: table-parsing-service-dev
   namespace: default
 spec:
   minReadySeconds: 60
