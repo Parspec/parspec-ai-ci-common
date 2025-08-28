@@ -129,4 +129,4 @@ metadata:
   name: column-detection-dev-sa
   namespace: default
   annotations:
-    eks.amazonaws.com/role-arn: arn:aws:iam::783952637912:role/crossAccountRole
+    eks.amazonaws.com/role-arn: arn:aws:iam::227410688064:role/column-detection-irsa-role
