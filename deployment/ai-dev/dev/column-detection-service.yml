@@ -48,7 +48,7 @@ spec:
                 - NET_RAW
           terminationMessagePath: /dev/termination-log
           terminationMessagePolicy: File
-          # --- Fluent Bit sidecar container ---
+            # --- Fluent Bit sidecar container ---
         - name: fluent-bit
           image: 379889217383.dkr.ecr.us-east-2.amazonaws.com/fluent-bit-custom:v24
           imagePullPolicy: IfNotPresent
@@ -94,3 +94,39 @@ spec:
         - key: "nvidia.com/gpu"
           value: "true"
           effect: "NoSchedule"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    loadBalancerClass: service.k8s.aws/nlb
+    service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: ip
+    service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
+    service.beta.kubernetes.io/aws-load-balancer-type: external
+    service.beta.kubernetes.io/aws-load-balancer-additional-resource-tags: map-migrated=migACLXAPHP5O
+  name: column-detection-dev-service
+  namespace: default
+spec:
+  allocateLoadBalancerNodePorts: true
+  externalTrafficPolicy: Cluster
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+    - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+    - port: 80
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    app: column-detection-dev
+  sessionAffinity: None
+  type: LoadBalancer
+  loadBalancerClass: eks.amazonaws.com/nlb
+--- 
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: column-detection-dev-sa
+  namespace: default
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::227410688064:role/column-detection-irsa-role
