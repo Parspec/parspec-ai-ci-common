@@ -190,6 +190,12 @@ jobs:
         run: |
           cp -r ./caller-repo/shared ./caller-repo/${{ inputs.build-context }}/ || true
 
+      - name: "Copy .env to build context"
+        if: ${{ steps.ecr_check.outputs.exists != 'true' }}
+        run: |
+            cp ./caller-repo/${{ inputs.build-context }}/src/.env ./caller-repo/${{ inputs.build-context }}/
+      
+
       - name: "Compute APP_MODULE (FastAPI heuristic)"
         if: ${{ steps.ecr_check.outputs.exists != 'true' }}
         id: appmod
