@@ -50,7 +50,7 @@ RUN pip install prometheus_client
 
 # Python deps – ensure requirements.txt includes: fastapi, uvicorn[standard], pydantic
 # RUN git config --global url."https://${GITHUB_TOKEN}:x-oauth-basic@github.com/".insteadOf "https://github.com/" && \
-RUN pip install --no-cache-dir git+https://oauth2:${GITHUB_TOKEN}@github.com/Parspec/parspec-common.git@main && \
+RUN pip install --no-cache-dir git+https://oauth2:${GITHUB_TOKEN}@github.com/Parspec/parspec-common.git@main_test && \
     pip install --no-cache-dir -r requirements.txt
 
 
