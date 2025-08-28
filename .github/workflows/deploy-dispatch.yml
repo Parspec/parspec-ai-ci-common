@@ -54,17 +54,7 @@ jobs:
           export TARGET_CONTAINER="${SERVICE}-${ENV}"
 
           # Update ONLY the Deployment doc for that container
-          yq -i '
-            if .kind == "Deployment" then
-              if (.spec.template.spec.containers[]? | select(.name == env(TARGET_CONTAINER))) then
-                (.spec.template.spec.containers[] | select(.name == env(TARGET_CONTAINER)).image) = env(NEW_IMAGE)
-              else
-                .
-              end
-            else
-              .
-            end
-          ' "$DEPLOY_FILE"
+          yq e -i 'if .kind == "Deployment" then .spec.template.spec.containers |= (map(if .name == env(TARGET_CONTAINER) then .image = env(NEW_IMAGE) else . end)) else . end' "$DEPLOY_FILE"
 
 
           echo "🔁 Diff:"
