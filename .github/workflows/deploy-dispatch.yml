@@ -54,7 +54,11 @@ jobs:
           export TARGET_CONTAINER="${SERVICE}-${ENV}"
 
           # Update ONLY the Deployment doc; preserve everything else
-          /usr/local/bin/yq -i 'select(.kind == "Deployment" and .metadata.name == env(TARGET_CONTAINER)) | .spec.template.spec.containers[] |= select(.name == env(TARGET_CONTAINER)).image = env(NEW_IMAGE)' "$DEPLOY_FILE"
+          /usr/local/bin/yq -i '
+          (.spec.template.spec.containers[] 
+           | select(.name == env(TARGET_CONTAINER)).image) = env(NEW_IMAGE)
+          ' "$DEPLOY_FILE"
+
           echo "🔁 Diff:"
           git --no-pager diff -- "$DEPLOY_FILE" || true
 
